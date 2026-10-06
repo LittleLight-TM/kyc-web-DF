@@ -20,13 +20,13 @@ else:
 
 TEMPLATES_DIR = os.path.join(BASE_DIR, "templates")
 
-# 1. جلب قائمة المستخدمين (المجلدات الفرعية داخل templates)
+# 1. جلب قائمة المستخدمين
 def get_users():
     if not os.path.exists(TEMPLATES_DIR):
         os.makedirs(TEMPLATES_DIR)
     return [d for d in os.listdir(TEMPLATES_DIR) if os.path.isdir(os.path.join(TEMPLATES_DIR, d))]
 
-# 2. جلب النماذج المتاحة للمستخدم المحدد فقط
+# 2. جلب النماذج المتاحة للمستخدم المحدد
 def get_user_templates(user_folder):
     user_path = os.path.join(TEMPLATES_DIR, user_folder)
     if os.path.exists(user_path):
@@ -36,12 +36,9 @@ def get_user_templates(user_folder):
 users = get_users()
 
 if not users:
-    st.error("لم يتم العثور على أي مجلدات فرعية للمستخدمين داخل مجلد templates! يرجى إنشاء مجلد باسم كل مستخدم ووضع قوالبه بداخله.")
+    st.error("لم يتم العثور على أي مجلدات فرعية للمستخدمين داخل مجلد templates!")
 else:
-    # القائمة المنسدلة لاختيار اسم المستخدم
     selected_user = st.selectbox("اختر اسم المستخدم:", users)
-
-    # القائمة المنسدلة لاختيار النموذج المخصص للمستخدم المحدد
     template_files = get_user_templates(selected_user)
 
     if not template_files:
@@ -52,7 +49,6 @@ else:
         st.markdown("---")
         st.subheader("إدخال البيانات المتغيرة")
 
-        # حقول إدخال البيانات بالتسميات الجديدة
         kyc_status = st.text_input("KYC STATUS")
         region = st.text_input("Region")
         office_name_en = st.text_input("Office Name EN")
@@ -66,17 +62,16 @@ else:
         mcc_val = st.number_input("MCC", min_value=0, step=1, value=None, placeholder="أرقام فقط")
         mcc = str(mcc_val) if mcc_val is not None else ""
 
-        # قاموس البيانات المستبدلة (يشمل مفاتيح القوالب القديمة والجديدة لضمان التوافق)
         data = {
             "KYC_STATUS": kyc_status,
-            "KYC_SUBJECT": kyc_status,  # للتوافق إذا كان القالب يستخدم الاسم القديم
+            "KYC_SUBJECT": kyc_status,
             "REGION": region,
             "OFFICE_NAME_EN": office_name_en,
-            "CLIENT_NAME_HEADER": office_name_en,  # للتوافق
+            "CLIENT_NAME_HEADER": office_name_en,
             "OFFICE_NAME_AR": office_name_ar,
-            "CLIENT_NAME_CELL": office_name_ar,  # للتوافق
+            "CLIENT_NAME_CELL": office_name_ar,
             "MERCHANT_ID": merchant_id,
-            "CLIENT_ID": merchant_id,  # للتوافق
+            "CLIENT_ID": merchant_id,
             "NATURE_OF_ACTIVITY": nature_of_activity,
             "MCC": mcc
         }
@@ -84,7 +79,6 @@ else:
         st.markdown("---")
 
         def replace_in_paragraph(paragraph, replacements):
-            # تجميع النص الكامل للفقرة للتعامل مع النصوص المقسمة مثل {{REGION}}
             full_text = paragraph.text
             has_match = False
             for placeholder, value in replacements.items():
@@ -102,21 +96,27 @@ else:
 
         def replace_placeholders(doc, data):
             replacements = {f"{{{{{key}}}}}" : val for key, val in data.items() if val}
+            
+            # --- معالجة وحذف عناصر الـ Form Fields برمجياً لمنع تحولها إلى 0 و 1 ---
+            for elem in doc.element.body.iter():
+                # إزالة حقول النماذج التفاعلية القديمة (Legacy Form Fields / Checkboxes)
+                if elem.tag.endswith(('ffData', 'checkBox', 'fldSimple')):
+                    parent = elem.getparent()
+                    if parent is not None:
+                        parent.remove(elem)
+
             if not replacements:
                 return
                 
-            # 1. الاستبدال في الفقرات العامة
             for p in doc.paragraphs:
                 replace_in_paragraph(p, replacements)
 
-            # 2. الاستبدال داخل الجداول
             for table in doc.tables:
                 for row in table.rows:
                     for cell in row.cells:
                         for p in cell.paragraphs:
                             replace_in_paragraph(p, replacements)
 
-            # 3. الاستبدال داخل الهيدر والفوتر
             for section in doc.sections:
                 for p in section.header.paragraphs:
                     replace_in_paragraph(p, replacements)
@@ -127,7 +127,6 @@ else:
             abs_docx = os.path.abspath(docx_path)
             abs_pdf = os.path.abspath(output_pdf_path)
 
-            # 1. بيئة Windows (تشغيل محلي عبر MS Word)
             if sys.platform == "win32":
                 try:
                     import pythoncom
@@ -138,37 +137,24 @@ else:
                     word.Visible = False
                     
                     doc = word.Documents.Open(abs_docx)
+                    doc.Fields.Unlink() # إزالة ارتباط الحقول لتثبيت التنسيق
                     
-                    # فك ارتباط حقول النموذج لمنع تحولها إلى أرقام
-                    doc.Fields.Unlink()
-                    
-                    doc.SaveAs(abs_pdf, FileFormat=17) # 17 = wdFormatPDF
+                    doc.SaveAs(abs_pdf, FileFormat=17)
                     doc.Close(False)
                     word.Quit()
-                    
                     if os.path.exists(abs_pdf):
                         return True
                 except Exception:
                     pass
 
-                try:
-                    from docx2pdf import convert
-                    convert(abs_docx, abs_pdf)
-                    if os.path.exists(abs_pdf):
-                        return True
-                except Exception:
-                    pass
-
-            # 2. بيئة Streamlit Cloud (Linux / LibreOffice)
+            # تحويل عبر LibreOffice على Streamlit Cloud
             try:
                 out_dir = os.path.dirname(abs_pdf)
-                # فلتر منع تحويل حقول Form Fields إلى أرقام تفاعلية 0 و 1
                 cmd = f'libreoffice --headless --convert-to "pdf:writer_pdf_Export:{{\"ExportFormFields\":{{\"type\":\"boolean\",\"value\":\"false\"}}}}" "{abs_docx}" --outdir "{out_dir}"'
                 subprocess.run(cmd, shell=True, check=True)
                 if os.path.exists(abs_pdf):
                     return True
             except Exception:
-                # محاولة تحويل احتياطية
                 try:
                     out_dir = os.path.dirname(abs_pdf)
                     cmd_fallback = f'libreoffice --headless --convert-to pdf "{abs_docx}" --outdir "{out_dir}"'
