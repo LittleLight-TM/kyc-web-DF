@@ -12,7 +12,7 @@ st.set_page_config(page_title="نظام تعديل نماذج KYC", page_icon="�
 st.title("نظام معالجة وتحديث نماذج KYC")
 st.write("قم باختيار المستخدم، ثم تحديد النموذج المطلوب وإدخال البيانات المعنية لتجهيز المستند.")
 
-# تحديد مسار المجلد الأساسي (سواء أثناء التشغيل العادي أو التطوير)
+# تحديد مسار المجلد الأساسي
 if hasattr(sys, '_MEIPASS'):
     BASE_DIR = sys._MEIPASS
 else:
@@ -52,63 +52,82 @@ else:
         st.markdown("---")
         st.subheader("إدخال البيانات المتغيرة")
 
-        # حقول إدخال البيانات
-        kyc_subject = st.text_input("KYC Subject / Main Dealer")
+        # حقول إدخال البيانات بالتسميات الجديدة
+        kyc_status = st.text_input("KYC STATUS")
         region = st.text_input("Region")
-        client_name_english = st.text_input("Client Name (ENGLISH)")
-        client_name_arabic = st.text_input("Client Name (ARABIC)")
+        office_name_en = st.text_input("Office Name EN")
+        office_name_ar = st.text_input("Office Name Ar")
         
-        client_id_val = st.number_input("Client ID", min_value=0, step=1, value=None, placeholder="أرقام فقط")
-        client_id = str(client_id_val) if client_id_val is not None else ""
+        merchant_id_val = st.number_input("Merchant_ID", min_value=0, step=1, value=None, placeholder="أرقام فقط")
+        merchant_id = str(merchant_id_val) if merchant_id_val is not None else ""
 
         nature_of_activity = st.text_input("Nature of Activity")
         
         mcc_val = st.number_input("MCC", min_value=0, step=1, value=None, placeholder="أرقام فقط")
         mcc = str(mcc_val) if mcc_val is not None else ""
 
-        # قاموس البيانات المستبدلة
+        # قاموس البيانات المستبدلة (يشمل مفاتيح القوالب القديمة والجديدة لضمان التوافق)
         data = {
-            "KYC_SUBJECT": kyc_subject,
+            "KYC_STATUS": kyc_status,
+            "KYC_SUBJECT": kyc_status,  # للتوافق إذا كان القالب يستخدم الاسم القديم
             "REGION": region,
-            "CLIENT_NAME_HEADER": client_name_english,
-            "CLIENT_NAME_CELL": client_name_arabic,
-            "CLIENT_ID": client_id,
+            "OFFICE_NAME_EN": office_name_en,
+            "CLIENT_NAME_HEADER": office_name_en,  # للتوافق
+            "OFFICE_NAME_AR": office_name_ar,
+            "CLIENT_NAME_CELL": office_name_ar,  # للتوافق
+            "MERCHANT_ID": merchant_id,
+            "CLIENT_ID": merchant_id,  # للتوافق
             "NATURE_OF_ACTIVITY": nature_of_activity,
             "MCC": mcc
         }
 
         st.markdown("---")
 
-        def replace_in_paragraphs(paragraphs, replacements):
-            for p in paragraphs:
-                for placeholder, value in replacements.items():
-                    if placeholder in p.text:
-                        p.text = p.text.replace(placeholder, value)
+        def replace_in_paragraph(paragraph, replacements):
+            # تجميع النص الكامل للفقرة للتعامل مع النصوص المقسمة مثل {{REGION}}
+            full_text = paragraph.text
+            has_match = False
+            for placeholder, value in replacements.items():
+                if placeholder in full_text:
+                    full_text = full_text.replace(placeholder, value)
+                    has_match = True
+
+            if has_match:
+                if paragraph.runs:
+                    paragraph.runs[0].text = full_text
+                    for r in paragraph.runs[1:]:
+                        r.text = ""
+                else:
+                    paragraph.text = full_text
 
         def replace_placeholders(doc, data):
             replacements = {f"{{{{{key}}}}}" : val for key, val in data.items() if val}
             if not replacements:
                 return
                 
-            # 1. الاستبدال في الفقرات
-            replace_in_paragraphs(doc.paragraphs, replacements)
+            # 1. الاستبدال في الفقرات العامة
+            for p in doc.paragraphs:
+                replace_in_paragraph(p, replacements)
 
             # 2. الاستبدال داخل الجداول
             for table in doc.tables:
                 for row in table.rows:
                     for cell in row.cells:
-                        replace_in_paragraphs(cell.paragraphs, replacements)
+                        for p in cell.paragraphs:
+                            replace_in_paragraph(p, replacements)
 
             # 3. الاستبدال داخل الهيدر والفوتر
             for section in doc.sections:
-                replace_in_paragraphs(section.header.paragraphs, replacements)
-                replace_in_paragraphs(section.footer.paragraphs, replacements)
+                for p in section.header.paragraphs:
+                    replace_in_paragraph(p, replacements)
+                for p in section.footer.paragraphs:
+                    replace_in_paragraph(p, replacements)
 
         def convert_to_pdf(docx_path, output_pdf_path):
             abs_docx = os.path.abspath(docx_path)
             abs_pdf = os.path.abspath(output_pdf_path)
 
-            # 1. بيئة Windows (MS Word local execution)
+            # 1. بيئة Windows (تشغيل محلي عبر MS Word)
             if sys.platform == "win32":
                 try:
                     import pythoncom
@@ -120,7 +139,7 @@ else:
                     
                     doc = word.Documents.Open(abs_docx)
                     
-                    # فك ارتباط الحقول قبل الحفظ لضمان عدم ظهور الأرقام بدل العناصر
+                    # فك ارتباط حقول النموذج لمنع تحولها إلى أرقام
                     doc.Fields.Unlink()
                     
                     doc.SaveAs(abs_pdf, FileFormat=17) # 17 = wdFormatPDF
@@ -143,13 +162,13 @@ else:
             # 2. بيئة Streamlit Cloud (Linux / LibreOffice)
             try:
                 out_dir = os.path.dirname(abs_pdf)
-                # استخدام فلتر التصدير الصريح لتجنب تحويل عناصر Form Fields إلى 0 و 1
+                # فلتر منع تحويل حقول Form Fields إلى أرقام تفاعلية 0 و 1
                 cmd = f'libreoffice --headless --convert-to "pdf:writer_pdf_Export:{{\"ExportFormFields\":{{\"type\":\"boolean\",\"value\":\"false\"}}}}" "{abs_docx}" --outdir "{out_dir}"'
                 subprocess.run(cmd, shell=True, check=True)
                 if os.path.exists(abs_pdf):
                     return True
             except Exception:
-                # خيار عادي احتياطي في حال عدم دعم خيارات الفلتر المتقدم
+                # محاولة تحويل احتياطية
                 try:
                     out_dir = os.path.dirname(abs_pdf)
                     cmd_fallback = f'libreoffice --headless --convert-to pdf "{abs_docx}" --outdir "{out_dir}"'
@@ -162,7 +181,6 @@ else:
             return False
 
         if st.button("معالجة وتجهيز المستند (PDF)", type="primary"):
-            # جلب مسار المستند الخاص بالمستخدم المحدد
             template_path = os.path.join(TEMPLATES_DIR, selected_user, selected_template)
             try:
                 doc = Document(template_path)
