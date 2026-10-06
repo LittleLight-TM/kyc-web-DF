@@ -78,20 +78,14 @@ else:
 
         st.markdown("---")
 
-        def clean_form_fields_xml(doc):
-            """تنظيف جميع الحقول التفاعلية والـ Checkboxes المخفية في هيكل XML للملف"""
+        def strip_form_fields(doc):
+            """تفكيك جميع أوسام الحقول التفاعلية Form Fields برمجياً لمنع تحولها إلى 0 و 1"""
             for elem in list(doc.element.body.iter()):
                 tag = elem.tag.split('}')[-1] if '}' in elem.tag else elem.tag
-                # إزالة حقول النماذج بمختلف أنواعها لضمان عدم قراءتها كـ 1 و 0
-                if tag in ['fldSimple', 'ffData', 'checkBox', 'sdt', 'sdtContent', 'sdtPr']:
+                if tag in ['fldSimple', 'ffData', 'checkBox', 'fldChar', 'instrText']:
                     parent = elem.getparent()
                     if parent is not None:
-                        # تحويل النص الداخلي إن وجد إلى نص عادي قبل الحذف
-                        text = elem.text or "".join([e.text for e in elem.iter() if e.text])
-                        if text and text.strip() not in ['0', '1', '']:
-                            elem.text = text
-                        else:
-                            parent.remove(elem)
+                        parent.remove(elem)
 
         def replace_in_paragraph(paragraph, replacements):
             full_text = paragraph.text
@@ -110,8 +104,8 @@ else:
                     paragraph.text = full_text
 
         def replace_placeholders(doc, data):
-            # 1. تنظيف أوسام Form Fields قبل الاستبدال
-            clean_form_fields_xml(doc)
+            # 1. إزالة حقول النماذج أولاً
+            strip_form_fields(doc)
 
             replacements = {f"{{{{{key}}}}}" : val for key, val in data.items() if val}
             if not replacements:
@@ -132,7 +126,7 @@ else:
                 for p in section.footer.paragraphs:
                     replace_in_paragraph(p, replacements)
 
-        def convert_to_pdf(docx_path, output_pdf_path):
+        def convert_to_pdf(docx_path, output_pdf_path, temp_dir):
             abs_docx = os.path.abspath(docx_path)
             abs_pdf = os.path.abspath(output_pdf_path)
 
@@ -156,18 +150,26 @@ else:
                 except Exception:
                     pass
 
-            # التحويل في بيئة Streamlit Cloud (Linux / LibreOffice)
+            # التحويل على Streamlit Cloud باستخدام بيئة منع تصدير النماذج التفاعلية
             try:
-                out_dir = os.path.dirname(abs_pdf)
-                # استخدام أمر تحويل مباشر يمنع تصدير نماذج PDF التفاعلية
-                cmd = f'libreoffice --headless --convert-to "pdf:writer_pdf_Export:{{\"SelectPdfVersion\":{{\"type\":\"long\",\"value\":\"0\"}},\"ExportFormFields\":{{\"type\":\"boolean\",\"value\":\"false\"}}}}" "{abs_docx}" --outdir "{out_dir}"'
+                user_profile_dir = os.path.join(temp_dir, "lo_profile")
+                os.makedirs(user_profile_dir, exist_ok=True)
+                
+                # استخدام أمرين مخصصين مع خيار عزل الملف الخاص وإغلاق تصدير حقول النماذج
+                cmd = (
+                    f'libreoffice "-env:UserInstallation=file://{user_profile_dir}" '
+                    f'--headless --convert-to "pdf:writer_pdf_Export:{{\"ExportFormFields\":{{\"type\":\"boolean\",\"value\":\"false\"}}}}" '
+                    f'"{abs_docx}" --outdir "{temp_dir}"'
+                )
                 subprocess.run(cmd, shell=True, check=True)
                 if os.path.exists(abs_pdf):
                     return True
             except Exception:
                 try:
-                    out_dir = os.path.dirname(abs_pdf)
-                    cmd_fallback = f'libreoffice --headless --convert-to pdf "{abs_docx}" --outdir "{out_dir}"'
+                    cmd_fallback = (
+                        f'libreoffice "-env:UserInstallation=file://{user_profile_dir}" '
+                        f'--headless --convert-to pdf "{abs_docx}" --outdir "{temp_dir}"'
+                    )
                     subprocess.run(cmd_fallback, shell=True, check=True)
                     if os.path.exists(abs_pdf):
                         return True
@@ -189,7 +191,7 @@ else:
                     doc.save(temp_docx)
 
                     with st.spinner("جاري معالجة المستند وتحويله إلى PDF... يرجى الانتظار"):
-                        success = convert_to_pdf(temp_docx, temp_pdf)
+                        success = convert_to_pdf(temp_docx, temp_pdf, temp_dir)
 
                     if success and os.path.exists(temp_pdf):
                         with open(temp_pdf, "rb") as f:
