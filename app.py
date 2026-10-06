@@ -80,47 +80,28 @@ else:
 
         st.markdown("---")
 
-        def convert_checkboxes_to_symbols(doc):
-            """تحويل جميع حقول Checkbox و Form Fields التفاعلية إلى رموز نصية ثابته أو تفريغها من الأرقام تلقائياً"""
-            body_element = doc.element.body
-            
-            # 1. البحث عن أوسام الحقول التفاعلية في XML واستبدالها بنص ثابت
-            for elem in list(body_element.iter()):
-                tag = elem.tag.split('}')[-1] if '}' in elem.tag else elem.tag
-                
-                # المعالجة الخاصة بـ Form Fields
-                if tag in ['ffData', 'checkBox', 'fldSimple']:
-                    parent = elem.getparent()
-                    if parent is not None:
-                        # التأكد مما إذا كان الحقل مفعلاً (Checked) أو غير مفعل
-                        is_checked = False
-                        for child in elem.iter():
-                            child_tag = child.tag.split('}')[-1] if '}' in child.tag else child.tag
-                            if child_tag == 'checked':
-                                val = child.get(qn('w:val'), '1')
-                                if val in ['1', 'true', 'on']:
-                                    is_checked = True
-                        
-                        # إنشاء عنصر نصي بديل يحتوي على الرمز المناسب
-                        new_run = OxmlElement('w:r')
-                        new_text = OxmlElement('w:t')
-                        new_text.text = "☑" if is_checked else "☐"
-                        new_run.append(new_text)
-                        
-                        parent.replace(elem, new_run)
-
-            # 2. تنظيف نصوص الأرقام 0 و 1 المعلقة داخل خلايا الجداول المظللة
+        def fix_risk_table_cells(doc):
+            """فحص لون خلفية الخلية وتحديد إذا كان يحتوي على تظليل أصفر لإبقاء العلامة وحذف الأرقام من غير المظلل"""
             for table in doc.tables:
                 for row in table.rows:
                     for cell in row.cells:
+                        # الحصول على كود لون الخلفية للخلية من XML
+                        tcPr = cell._element.xpath('w:tcPr')
+                        shd = tcPr[0].xpath('w:shd') if tcPr else []
+                        fill_color = shd[0].get(qn('w:fill')) if shd else ""
+
                         cell_text = cell.text.strip()
+
+                        # فحص ما إذا كانت الخلية مظللة باللون الأصفر (أو ألوان التظليل القريبة)
+                        is_yellow = fill_color and fill_color.lower() in ['ffff00', 'yellow', 'ffff99', 'fff2cc']
+
                         if cell_text in ['0', '1']:
-                            # إذا كانت الخلية تحتوي فقط على 0 أو 1، تحويل 1 إلى رمز المربع المظلل وإخفاء 0
-                            for p in cell.paragraphs:
-                                if p.text.strip() == '1':
-                                    p.text = "☑"
-                                elif p.text.strip() == '0':
-                                    p.text = "☐"
+                            if is_yellow:
+                                # إذا كانت مظللة، نترك الرقم 1 أو نضع رمز المربع المظلل ☑
+                                cell.text = "☑"
+                            else:
+                                # إذا لم تكن مظللة، ننظف الرقم ونضع رمز المربع الفارغ ☐
+                                cell.text = "☐"
 
         def replace_in_paragraph(paragraph, replacements):
             full_text = paragraph.text
@@ -139,8 +120,8 @@ else:
                     paragraph.text = full_text
 
         def replace_placeholders(doc, data):
-            # تحويل الحقول التفاعلية والأرقام برمجياً أولاً
-            convert_checkboxes_to_symbols(doc)
+            # 1. إصلاح خلايا الجدول والأرقام بحسب التظليل أوتوماتيكياً
+            fix_risk_table_cells(doc)
 
             replacements = {f"{{{{{key}}}}}" : val for key, val in data.items() if val}
             if not replacements:
@@ -175,8 +156,6 @@ else:
                     word.Visible = False
                     
                     doc = word.Documents.Open(abs_docx)
-                    doc.Fields.Unlink()
-                    
                     doc.SaveAs(abs_pdf, FileFormat=17)
                     doc.Close(False)
                     word.Quit()
@@ -185,7 +164,7 @@ else:
                 except Exception:
                     pass
 
-            # التحويل في بيئة Streamlit Cloud
+            # التحويل عبر LibreOffice
             try:
                 cmd = f'libreoffice --headless --convert-to pdf "{abs_docx}" --outdir "{temp_dir}"'
                 subprocess.run(cmd, shell=True, check=True)
