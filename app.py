@@ -5,7 +5,6 @@ import subprocess
 import tempfile
 import streamlit as st
 from docx import Document
-from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 
 # إعداد الصفحة
@@ -80,36 +79,27 @@ else:
 
         st.markdown("---")
 
-        def is_element_highlighted_or_shaded(cell_elem):
-            """فحص شامل لجميع الوسوم البرمجية الخاصة بالتمييز والتظليل باللون الأصفر"""
-            xml_str = cell_elem.xml.lower()
+        def strip_form_fields(doc):
+            """تفكيك وحذف جميع وسوم حقول التجميع والتفاعلات داخل الـ XML برمجياً"""
+            body = doc.element.body
+            # إزالة كافة عناصر الحقول التفاعلية Form Fields
+            for target_tag in ['fldSimple', 'ffData', 'checkBox']:
+                for elem in body.xpath(f'//w:{target_tag}'):
+                    parent = elem.getparent()
+                    if parent is not None:
+                        parent.remove(elem)
             
-            # قائمة الأكواد والمسميات التي تعبر عن اللون الأصفر في Word
-            yellow_patterns = ['yellow', 'ffff00', 'ffff99', 'fff2cc', 'feff00', 'ffd700']
-            
-            for pattern in yellow_patterns:
-                if pattern in xml_str:
-                    return True
-            return False
-
-        def clean_and_format_risk_table(doc):
-            """معالجة جميع خلايا الجدول: الاحتفاظ بالتظليل للخلية المظللة وحذف الرقم 1 من غير المظللة"""
+            # تفريغ الأرقام المتبقية في جدول تقييم المخاطر إذا لم تكن ضمن الخلايا المطلوبة
             for table in doc.tables:
                 for row in table.rows:
                     for cell in row.cells:
-                        # الحصول على النص بدون مسافات زائدة
-                        text = cell.text.strip()
+                        # فحص كود XML للخلية للتأكد من وجود التظليل/الاصفرار
+                        xml_str = cell._element.xml.lower()
+                        is_yellow = any(col in xml_str for col in ['yellow', 'ffff00', 'ffff99', 'fff2cc'])
                         
-                        if text in ['1', '0']:
-                            # التثبت من وجود تظليل أو تمييز أصفر بجميع وسوم الخلية
-                            if is_element_highlighted_or_shaded(cell._element):
-                                # إذا كانت مظللة بالأصفر نتركها ناصعة ونستبدل الرقم بالرمز المظلل ☑ أو نترك الخلية مظللة
-                                for p in cell.paragraphs:
-                                    p.text = "☑"
-                            else:
-                                # إذا لم تكن الخلية تحتوي على أصفر إطلاقاً، نفرغ النص تماماً أو نضع ☐
-                                for p in cell.paragraphs:
-                                    p.text = ""
+                        if cell.text.strip() in ['1', '0']:
+                            if not is_yellow:
+                                cell.text = ""
 
         def replace_in_paragraph(paragraph, replacements):
             full_text = paragraph.text
@@ -128,8 +118,8 @@ else:
                     paragraph.text = full_text
 
         def replace_placeholders(doc, data):
-            # 1. تطبيق المعالجة الذكية لتظليل جدول الأخطار أولاً
-            clean_and_format_risk_table(doc)
+            # 1. تفكيك وتنظيف الحقول التفاعلية في الذاكرة أولاً
+            strip_form_fields(doc)
 
             replacements = {f"{{{{{key}}}}}" : val for key, val in data.items() if val}
             if not replacements:
@@ -164,6 +154,8 @@ else:
                     word.Visible = False
                     
                     doc = word.Documents.Open(abs_docx)
+                    # فك ارتباط الحقول التفاعلية وحفظها كنص عادي ثابت
+                    doc.Fields.Unlink()
                     doc.SaveAs(abs_pdf, FileFormat=17)
                     doc.Close(False)
                     word.Quit()
@@ -172,9 +164,9 @@ else:
                 except Exception:
                     pass
 
-            # التحويل باستخدام LibreOffice في Streamlit Cloud
+            # التحويل عبر LibreOffice مع تعطيل تصدير الحقول التفاعلية (ExportFormFields=false)
             try:
-                cmd = f'libreoffice --headless --convert-to pdf "{abs_docx}" --outdir "{temp_dir}"'
+                cmd = f'libreoffice --headless --convert-to "pdf:writer_pdf_Export:{{\"ExportFormFields\":{{\"type\":\"boolean\",\"value\":\"false\"}}}}" "{abs_docx}" --outdir "{temp_dir}"'
                 subprocess.run(cmd, shell=True, check=True)
                 if os.path.exists(abs_pdf):
                     return True
