@@ -78,6 +78,21 @@ else:
 
         st.markdown("---")
 
+        def clean_form_fields_xml(doc):
+            """تنظيف جميع الحقول التفاعلية والـ Checkboxes المخفية في هيكل XML للملف"""
+            for elem in list(doc.element.body.iter()):
+                tag = elem.tag.split('}')[-1] if '}' in elem.tag else elem.tag
+                # إزالة حقول النماذج بمختلف أنواعها لضمان عدم قراءتها كـ 1 و 0
+                if tag in ['fldSimple', 'ffData', 'checkBox', 'sdt', 'sdtContent', 'sdtPr']:
+                    parent = elem.getparent()
+                    if parent is not None:
+                        # تحويل النص الداخلي إن وجد إلى نص عادي قبل الحذف
+                        text = elem.text or "".join([e.text for e in elem.iter() if e.text])
+                        if text and text.strip() not in ['0', '1', '']:
+                            elem.text = text
+                        else:
+                            parent.remove(elem)
+
         def replace_in_paragraph(paragraph, replacements):
             full_text = paragraph.text
             has_match = False
@@ -95,16 +110,10 @@ else:
                     paragraph.text = full_text
 
         def replace_placeholders(doc, data):
-            replacements = {f"{{{{{key}}}}}" : val for key, val in data.items() if val}
-            
-            # --- معالجة وحذف عناصر الـ Form Fields برمجياً لمنع تحولها إلى 0 و 1 ---
-            for elem in doc.element.body.iter():
-                # إزالة حقول النماذج التفاعلية القديمة (Legacy Form Fields / Checkboxes)
-                if elem.tag.endswith(('ffData', 'checkBox', 'fldSimple')):
-                    parent = elem.getparent()
-                    if parent is not None:
-                        parent.remove(elem)
+            # 1. تنظيف أوسام Form Fields قبل الاستبدال
+            clean_form_fields_xml(doc)
 
+            replacements = {f"{{{{{key}}}}}" : val for key, val in data.items() if val}
             if not replacements:
                 return
                 
@@ -137,7 +146,7 @@ else:
                     word.Visible = False
                     
                     doc = word.Documents.Open(abs_docx)
-                    doc.Fields.Unlink() # إزالة ارتباط الحقول لتثبيت التنسيق
+                    doc.Fields.Unlink()
                     
                     doc.SaveAs(abs_pdf, FileFormat=17)
                     doc.Close(False)
@@ -147,10 +156,11 @@ else:
                 except Exception:
                     pass
 
-            # تحويل عبر LibreOffice على Streamlit Cloud
+            # التحويل في بيئة Streamlit Cloud (Linux / LibreOffice)
             try:
                 out_dir = os.path.dirname(abs_pdf)
-                cmd = f'libreoffice --headless --convert-to "pdf:writer_pdf_Export:{{\"ExportFormFields\":{{\"type\":\"boolean\",\"value\":\"false\"}}}}" "{abs_docx}" --outdir "{out_dir}"'
+                # استخدام أمر تحويل مباشر يمنع تصدير نماذج PDF التفاعلية
+                cmd = f'libreoffice --headless --convert-to "pdf:writer_pdf_Export:{{\"SelectPdfVersion\":{{\"type\":\"long\",\"value\":\"0\"}},\"ExportFormFields\":{{\"type\":\"boolean\",\"value\":\"false\"}}}}" "{abs_docx}" --outdir "{out_dir}"'
                 subprocess.run(cmd, shell=True, check=True)
                 if os.path.exists(abs_pdf):
                     return True
