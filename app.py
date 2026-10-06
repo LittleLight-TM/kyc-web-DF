@@ -5,6 +5,8 @@ import subprocess
 import tempfile
 import streamlit as st
 from docx import Document
+from docx.oxml import OxmlElement
+from docx.oxml.ns import qn
 
 # إعداد الصفحة
 st.set_page_config(page_title="نظام تعديل نماذج KYC", page_icon="📝", layout="centered")
@@ -78,14 +80,47 @@ else:
 
         st.markdown("---")
 
-        def strip_form_fields(doc):
-            """تفكيك جميع أوسام الحقول التفاعلية Form Fields برمجياً لمنع تحولها إلى 0 و 1"""
-            for elem in list(doc.element.body.iter()):
+        def convert_checkboxes_to_symbols(doc):
+            """تحويل جميع حقول Checkbox و Form Fields التفاعلية إلى رموز نصية ثابته أو تفريغها من الأرقام تلقائياً"""
+            body_element = doc.element.body
+            
+            # 1. البحث عن أوسام الحقول التفاعلية في XML واستبدالها بنص ثابت
+            for elem in list(body_element.iter()):
                 tag = elem.tag.split('}')[-1] if '}' in elem.tag else elem.tag
-                if tag in ['fldSimple', 'ffData', 'checkBox', 'fldChar', 'instrText']:
+                
+                # المعالجة الخاصة بـ Form Fields
+                if tag in ['ffData', 'checkBox', 'fldSimple']:
                     parent = elem.getparent()
                     if parent is not None:
-                        parent.remove(elem)
+                        # التأكد مما إذا كان الحقل مفعلاً (Checked) أو غير مفعل
+                        is_checked = False
+                        for child in elem.iter():
+                            child_tag = child.tag.split('}')[-1] if '}' in child.tag else child.tag
+                            if child_tag == 'checked':
+                                val = child.get(qn('w:val'), '1')
+                                if val in ['1', 'true', 'on']:
+                                    is_checked = True
+                        
+                        # إنشاء عنصر نصي بديل يحتوي على الرمز المناسب
+                        new_run = OxmlElement('w:r')
+                        new_text = OxmlElement('w:t')
+                        new_text.text = "☑" if is_checked else "☐"
+                        new_run.append(new_text)
+                        
+                        parent.replace(elem, new_run)
+
+            # 2. تنظيف نصوص الأرقام 0 و 1 المعلقة داخل خلايا الجداول المظللة
+            for table in doc.tables:
+                for row in table.rows:
+                    for cell in row.cells:
+                        cell_text = cell.text.strip()
+                        if cell_text in ['0', '1']:
+                            # إذا كانت الخلية تحتوي فقط على 0 أو 1، تحويل 1 إلى رمز المربع المظلل وإخفاء 0
+                            for p in cell.paragraphs:
+                                if p.text.strip() == '1':
+                                    p.text = "☑"
+                                elif p.text.strip() == '0':
+                                    p.text = "☐"
 
         def replace_in_paragraph(paragraph, replacements):
             full_text = paragraph.text
@@ -104,8 +139,8 @@ else:
                     paragraph.text = full_text
 
         def replace_placeholders(doc, data):
-            # 1. إزالة حقول النماذج أولاً
-            strip_form_fields(doc)
+            # تحويل الحقول التفاعلية والأرقام برمجياً أولاً
+            convert_checkboxes_to_symbols(doc)
 
             replacements = {f"{{{{{key}}}}}" : val for key, val in data.items() if val}
             if not replacements:
@@ -150,31 +185,14 @@ else:
                 except Exception:
                     pass
 
-            # التحويل على Streamlit Cloud باستخدام بيئة منع تصدير النماذج التفاعلية
+            # التحويل في بيئة Streamlit Cloud
             try:
-                user_profile_dir = os.path.join(temp_dir, "lo_profile")
-                os.makedirs(user_profile_dir, exist_ok=True)
-                
-                # استخدام أمرين مخصصين مع خيار عزل الملف الخاص وإغلاق تصدير حقول النماذج
-                cmd = (
-                    f'libreoffice "-env:UserInstallation=file://{user_profile_dir}" '
-                    f'--headless --convert-to "pdf:writer_pdf_Export:{{\"ExportFormFields\":{{\"type\":\"boolean\",\"value\":\"false\"}}}}" '
-                    f'"{abs_docx}" --outdir "{temp_dir}"'
-                )
+                cmd = f'libreoffice --headless --convert-to pdf "{abs_docx}" --outdir "{temp_dir}"'
                 subprocess.run(cmd, shell=True, check=True)
                 if os.path.exists(abs_pdf):
                     return True
             except Exception:
-                try:
-                    cmd_fallback = (
-                        f'libreoffice "-env:UserInstallation=file://{user_profile_dir}" '
-                        f'--headless --convert-to pdf "{abs_docx}" --outdir "{temp_dir}"'
-                    )
-                    subprocess.run(cmd_fallback, shell=True, check=True)
-                    if os.path.exists(abs_pdf):
-                        return True
-                except Exception:
-                    pass
+                pass
 
             return False
 
