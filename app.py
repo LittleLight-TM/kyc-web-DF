@@ -80,28 +80,36 @@ else:
 
         st.markdown("---")
 
-        def fix_risk_table_cells(doc):
-            """فحص لون خلفية الخلية وتحديد إذا كان يحتوي على تظليل أصفر لإبقاء العلامة وحذف الأرقام من غير المظلل"""
+        def is_element_highlighted_or_shaded(cell_elem):
+            """فحص شامل لجميع الوسوم البرمجية الخاصة بالتمييز والتظليل باللون الأصفر"""
+            xml_str = cell_elem.xml.lower()
+            
+            # قائمة الأكواد والمسميات التي تعبر عن اللون الأصفر في Word
+            yellow_patterns = ['yellow', 'ffff00', 'ffff99', 'fff2cc', 'feff00', 'ffd700']
+            
+            for pattern in yellow_patterns:
+                if pattern in xml_str:
+                    return True
+            return False
+
+        def clean_and_format_risk_table(doc):
+            """معالجة جميع خلايا الجدول: الاحتفاظ بالتظليل للخلية المظللة وحذف الرقم 1 من غير المظللة"""
             for table in doc.tables:
                 for row in table.rows:
                     for cell in row.cells:
-                        # الحصول على كود لون الخلفية للخلية من XML
-                        tcPr = cell._element.xpath('w:tcPr')
-                        shd = tcPr[0].xpath('w:shd') if tcPr else []
-                        fill_color = shd[0].get(qn('w:fill')) if shd else ""
-
-                        cell_text = cell.text.strip()
-
-                        # فحص ما إذا كانت الخلية مظللة باللون الأصفر (أو ألوان التظليل القريبة)
-                        is_yellow = fill_color and fill_color.lower() in ['ffff00', 'yellow', 'ffff99', 'fff2cc']
-
-                        if cell_text in ['0', '1']:
-                            if is_yellow:
-                                # إذا كانت مظللة، نترك الرقم 1 أو نضع رمز المربع المظلل ☑
-                                cell.text = "☑"
+                        # الحصول على النص بدون مسافات زائدة
+                        text = cell.text.strip()
+                        
+                        if text in ['1', '0']:
+                            # التثبت من وجود تظليل أو تمييز أصفر بجميع وسوم الخلية
+                            if is_element_highlighted_or_shaded(cell._element):
+                                # إذا كانت مظللة بالأصفر نتركها ناصعة ونستبدل الرقم بالرمز المظلل ☑ أو نترك الخلية مظللة
+                                for p in cell.paragraphs:
+                                    p.text = "☑"
                             else:
-                                # إذا لم تكن مظللة، ننظف الرقم ونضع رمز المربع الفارغ ☐
-                                cell.text = "☐"
+                                # إذا لم تكن الخلية تحتوي على أصفر إطلاقاً، نفرغ النص تماماً أو نضع ☐
+                                for p in cell.paragraphs:
+                                    p.text = ""
 
         def replace_in_paragraph(paragraph, replacements):
             full_text = paragraph.text
@@ -120,8 +128,8 @@ else:
                     paragraph.text = full_text
 
         def replace_placeholders(doc, data):
-            # 1. إصلاح خلايا الجدول والأرقام بحسب التظليل أوتوماتيكياً
-            fix_risk_table_cells(doc)
+            # 1. تطبيق المعالجة الذكية لتظليل جدول الأخطار أولاً
+            clean_and_format_risk_table(doc)
 
             replacements = {f"{{{{{key}}}}}" : val for key, val in data.items() if val}
             if not replacements:
@@ -164,7 +172,7 @@ else:
                 except Exception:
                     pass
 
-            # التحويل عبر LibreOffice
+            # التحويل باستخدام LibreOffice في Streamlit Cloud
             try:
                 cmd = f'libreoffice --headless --convert-to pdf "{abs_docx}" --outdir "{temp_dir}"'
                 subprocess.run(cmd, shell=True, check=True)
