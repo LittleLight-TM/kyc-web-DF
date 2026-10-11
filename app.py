@@ -15,11 +15,11 @@ st.set_page_config(page_title="نظام تعديل نماذج KYC", page_icon="�
 # ==========================================
 USER_CREDENTIALS = {
     "yousif": {
-        "password": "123",        # كلمة المرور ليوسف
+        "password": "Asdf1asdf",        # كلمة المرور ليوسف
         "folder": "يوسف"          # اسم المجلد الخاص به في GitHub
     },
     "saif": {
-        "password": "456",        # كلمة المرور لسيف
+        "password": "saif",        # كلمة المرور لسيف
         "folder": "سيف"           # اسم المجلد الخاص به في GitHub
     }
 }
