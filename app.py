@@ -11,12 +11,17 @@ from docx.oxml.ns import qn
 st.set_page_config(page_title="نظام تعديل نماذج KYC", page_icon="📝", layout="centered")
 
 # ==========================================
-# 🔑 إعدادات الحسابات ورموز الدخول
-# قم بتغيير كلمات المرور وأسماء المستخدمين هنا
+# 🔑 إعدادات الحسابات وربطها بالمجلدات
 # ==========================================
 USER_CREDENTIALS = {
-    "yousif": "Asdf1asdf",     # اسم المستخدم الأول : كلمة المرور
-    "saif": "1234"        # اسم المستخدم الثاني : كلمة المرور
+    "yousif": {
+        "password": "123",        # كلمة المرور ليوسف
+        "folder": "يوسف"          # اسم المجلد الخاص به في GitHub
+    },
+    "saif": {
+        "password": "456",        # كلمة المرور لسيف
+        "folder": "سيف"           # اسم المجلد الخاص به في GitHub
+    }
 }
 
 # تحديد مسار المجلد الأساسي
@@ -42,12 +47,12 @@ if not st.session_state["authenticated"]:
     st.write("يرجى إدخال اسم المستخدم ورمز الدخول للوصول إلى النماذج الخاصّة بك.")
 
     with st.form("login_form"):
-        username_input = st.text_input("اسم المستخدم").strip()
+        username_input = st.text_input("اسم المستخدم (yousif / saif)").strip().lower()
         password_input = st.text_input("رمز الدخول (كلمة المرور)", type="password").strip()
         submit_button = st.form_submit_button("تسجيل الدخول", type="primary")
 
         if submit_button:
-            if username_input in USER_CREDENTIALS and USER_CREDENTIALS[username_input] == password_input:
+            if username_input in USER_CREDENTIALS and USER_CREDENTIALS[username_input]["password"] == password_input:
                 st.session_state["authenticated"] = True
                 st.session_state["logged_user"] = username_input
                 st.success(f"مرحباً بك {username_input}! جاري تحميل لوحة التحكم...")
@@ -59,12 +64,13 @@ else:
     # ==========================================
     # 2. الواجهة الرئيسية بعد تسجيل الدخول
     # ==========================================
-    logged_user = st.session_state["logged_user"]
+    logged_user_key = st.session_state["logged_user"]
+    user_folder_name = USER_CREDENTIALS[logged_user_key]["folder"]
 
     # شريط علوي لإظهار المستخدم الحالي وزر الخروج
     col_user, col_logout = st.columns([3, 1])
     with col_user:
-        st.write(f"👤 **المستخدم الحالي:** `{logged_user}`")
+        st.write(f"👤 **المستخدم الحالي:** `{logged_user_key}` ({user_folder_name})")
     with col_logout:
         if st.button("تسجيل الخروج"):
             st.session_state["authenticated"] = False
@@ -74,17 +80,17 @@ else:
     st.title("نظام معالجة وتحديث نماذج KYC")
     st.write("قم بتحديد النموذج المطلوب وإدخال البيانات المعنية لتجهيز المستند.")
 
-    # جلب النماذج الخاصة بالمستخدم المسجل فقط من مجلده
-    def get_user_templates(user_folder):
-        user_path = os.path.join(TEMPLATES_DIR, user_folder)
+    # جلب النماذج من مجلد المستخدم العربي الخاص به
+    def get_user_templates(folder_name):
+        user_path = os.path.join(TEMPLATES_DIR, folder_name)
         if os.path.exists(user_path):
             return [f for f in os.listdir(user_path) if f.endswith(".docx") and not f.startswith("~$")]
         return []
 
-    template_files = get_user_templates(logged_user)
+    template_files = get_user_templates(user_folder_name)
 
     if not template_files:
-        st.warning(f"لا توجد ملفات Word متوفرة في مجلد المستخدم ({logged_user}).")
+        st.warning(f"لا توجد ملفات Word متوفرة في مجلد المستخدم ({user_folder_name}).")
     else:
         selected_template = st.selectbox("اختر النموذج المطلوب معالجته:", template_files)
 
@@ -211,7 +217,7 @@ else:
             return False
 
         if st.button("معالجة وتجهيز المستند (PDF)", type="primary"):
-            template_path = os.path.join(TEMPLATES_DIR, logged_user, selected_template)
+            template_path = os.path.join(TEMPLATES_DIR, user_folder_name, selected_template)
             try:
                 doc = Document(template_path)
                 replace_placeholders(doc, data)
@@ -233,7 +239,7 @@ else:
                         st.download_button(
                             label="تنزيل المستند بصيغة PDF",
                             data=pdf_bytes,
-                            file_name=f"{logged_user}_{os.path.splitext(selected_template)[0]}.pdf",
+                            file_name=f"{logged_user_key}_{os.path.splitext(selected_template)[0]}.pdf",
                             mime="application/pdf"
                         )
                     else:
@@ -244,7 +250,7 @@ else:
                         st.download_button(
                             label="تنزيل المستند بصيغة DOCX",
                             data=bio,
-                            file_name=f"{logged_user}_{selected_template}",
+                            file_name=f"{logged_user_key}_{selected_template}",
                             mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
                         )
 
