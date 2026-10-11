@@ -10,8 +10,14 @@ from docx.oxml.ns import qn
 # إعداد الصفحة
 st.set_page_config(page_title="نظام تعديل نماذج KYC", page_icon="📝", layout="centered")
 
-st.title("نظام معالجة وتحديث نماذج KYC")
-st.write("قم باختيار المستخدم، ثم تحديد النموذج المطلوب وإدخال البيانات المعنية لتجهيز المستند.")
+# ==========================================
+# 🔑 إعدادات الحسابات ورموز الدخول
+# قم بتغيير كلمات المرور وأسماء المستخدمين هنا
+# ==========================================
+USER_CREDENTIALS = {
+    "yousif": "Asdf1asdf",     # اسم المستخدم الأول : كلمة المرور
+    "saif": "1234"        # اسم المستخدم الثاني : كلمة المرور
+}
 
 # تحديد مسار المجلد الأساسي
 if hasattr(sys, '_MEIPASS'):
@@ -21,29 +27,64 @@ else:
 
 TEMPLATES_DIR = os.path.join(BASE_DIR, "templates")
 
-# 1. جلب قائمة المستخدمين
-def get_users():
-    if not os.path.exists(TEMPLATES_DIR):
-        os.makedirs(TEMPLATES_DIR)
-    return [d for d in os.listdir(TEMPLATES_DIR) if os.path.isdir(os.path.join(TEMPLATES_DIR, d))]
+# إدارة حالة تسجيل الدخول عبر Session State
+if "authenticated" not in st.session_state:
+    st.session_state["authenticated"] = False
+if "logged_user" not in st.session_state:
+    st.session_state["logged_user"] = None
 
-# 2. جلب النماذج المتاحة للمستخدم المحدد
-def get_user_templates(user_folder):
-    user_path = os.path.join(TEMPLATES_DIR, user_folder)
-    if os.path.exists(user_path):
-        return [f for f in os.listdir(user_path) if f.endswith(".docx") and not f.startswith("~$")]
-    return []
 
-users = get_users()
+# ==========================================
+# 1. شاشة تسجيل الدخول
+# ==========================================
+if not st.session_state["authenticated"]:
+    st.title("🔐 تسجيل الدخول للنظام")
+    st.write("يرجى إدخال اسم المستخدم ورمز الدخول للوصول إلى النماذج الخاصّة بك.")
 
-if not users:
-    st.error("لم يتم العثور على أي مجلدات فرعية للمستخدمين داخل مجلد templates!")
+    with st.form("login_form"):
+        username_input = st.text_input("اسم المستخدم").strip()
+        password_input = st.text_input("رمز الدخول (كلمة المرور)", type="password").strip()
+        submit_button = st.form_submit_button("تسجيل الدخول", type="primary")
+
+        if submit_button:
+            if username_input in USER_CREDENTIALS and USER_CREDENTIALS[username_input] == password_input:
+                st.session_state["authenticated"] = True
+                st.session_state["logged_user"] = username_input
+                st.success(f"مرحباً بك {username_input}! جاري تحميل لوحة التحكم...")
+                st.rerun()
+            else:
+                st.error("اسم المستخدم أو رمز الدخول غير صحيح!")
+
 else:
-    selected_user = st.selectbox("اختر اسم المستخدم:", users)
-    template_files = get_user_templates(selected_user)
+    # ==========================================
+    # 2. الواجهة الرئيسية بعد تسجيل الدخول
+    # ==========================================
+    logged_user = st.session_state["logged_user"]
+
+    # شريط علوي لإظهار المستخدم الحالي وزر الخروج
+    col_user, col_logout = st.columns([3, 1])
+    with col_user:
+        st.write(f"👤 **المستخدم الحالي:** `{logged_user}`")
+    with col_logout:
+        if st.button("تسجيل الخروج"):
+            st.session_state["authenticated"] = False
+            st.session_state["logged_user"] = None
+            st.rerun()
+
+    st.title("نظام معالجة وتحديث نماذج KYC")
+    st.write("قم بتحديد النموذج المطلوب وإدخال البيانات المعنية لتجهيز المستند.")
+
+    # جلب النماذج الخاصة بالمستخدم المسجل فقط من مجلده
+    def get_user_templates(user_folder):
+        user_path = os.path.join(TEMPLATES_DIR, user_folder)
+        if os.path.exists(user_path):
+            return [f for f in os.listdir(user_path) if f.endswith(".docx") and not f.startswith("~$")]
+        return []
+
+    template_files = get_user_templates(logged_user)
 
     if not template_files:
-        st.warning(f"لا توجد ملفات Word في مجلد المستخدم ({selected_user}).")
+        st.warning(f"لا توجد ملفات Word متوفرة في مجلد المستخدم ({logged_user}).")
     else:
         selected_template = st.selectbox("اختر النموذج المطلوب معالجته:", template_files)
 
@@ -82,18 +123,15 @@ else:
         def strip_form_fields(doc):
             """تفكيك وحذف جميع وسوم حقول التجميع والتفاعلات داخل الـ XML برمجياً"""
             body = doc.element.body
-            # إزالة كافة عناصر الحقول التفاعلية Form Fields
             for target_tag in ['fldSimple', 'ffData', 'checkBox']:
                 for elem in body.xpath(f'//w:{target_tag}'):
                     parent = elem.getparent()
                     if parent is not None:
                         parent.remove(elem)
             
-            # تفريغ الأرقام المتبقية في جدول تقييم المخاطر إذا لم تكن ضمن الخلايا المطلوبة
             for table in doc.tables:
                 for row in table.rows:
                     for cell in row.cells:
-                        # فحص كود XML للخلية للتأكد من وجود التظليل/الاصفرار
                         xml_str = cell._element.xml.lower()
                         is_yellow = any(col in xml_str for col in ['yellow', 'ffff00', 'ffff99', 'fff2cc'])
                         
@@ -118,7 +156,6 @@ else:
                     paragraph.text = full_text
 
         def replace_placeholders(doc, data):
-            # 1. تفكيك وتنظيف الحقول التفاعلية في الذاكرة أولاً
             strip_form_fields(doc)
 
             replacements = {f"{{{{{key}}}}}" : val for key, val in data.items() if val}
@@ -154,7 +191,6 @@ else:
                     word.Visible = False
                     
                     doc = word.Documents.Open(abs_docx)
-                    # فك ارتباط الحقول التفاعلية وحفظها كنص عادي ثابت
                     doc.Fields.Unlink()
                     doc.SaveAs(abs_pdf, FileFormat=17)
                     doc.Close(False)
@@ -164,7 +200,6 @@ else:
                 except Exception:
                     pass
 
-            # التحويل عبر LibreOffice مع تعطيل تصدير الحقول التفاعلية (ExportFormFields=false)
             try:
                 cmd = f'libreoffice --headless --convert-to "pdf:writer_pdf_Export:{{\"ExportFormFields\":{{\"type\":\"boolean\",\"value\":\"false\"}}}}" "{abs_docx}" --outdir "{temp_dir}"'
                 subprocess.run(cmd, shell=True, check=True)
@@ -176,7 +211,7 @@ else:
             return False
 
         if st.button("معالجة وتجهيز المستند (PDF)", type="primary"):
-            template_path = os.path.join(TEMPLATES_DIR, selected_user, selected_template)
+            template_path = os.path.join(TEMPLATES_DIR, logged_user, selected_template)
             try:
                 doc = Document(template_path)
                 replace_placeholders(doc, data)
@@ -198,7 +233,7 @@ else:
                         st.download_button(
                             label="تنزيل المستند بصيغة PDF",
                             data=pdf_bytes,
-                            file_name=f"{selected_user}_{os.path.splitext(selected_template)[0]}.pdf",
+                            file_name=f"{logged_user}_{os.path.splitext(selected_template)[0]}.pdf",
                             mime="application/pdf"
                         )
                     else:
@@ -209,7 +244,7 @@ else:
                         st.download_button(
                             label="تنزيل المستند بصيغة DOCX",
                             data=bio,
-                            file_name=f"{selected_user}_{selected_template}",
+                            file_name=f"{logged_user}_{selected_template}",
                             mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
                         )
 
