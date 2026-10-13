@@ -67,7 +67,7 @@ if "authenticated" not in st.session_state:
 if "logged_user" not in st.session_state:
     st.session_state["logged_user"] = None
 
-# مفتاح تصفير النموذج بعد المعالجة
+# مفتاح تصفير النموذج
 if "form_reset_key" not in st.session_state:
     st.session_state["form_reset_key"] = 0
 
@@ -123,12 +123,19 @@ else:
     if not template_files:
         st.warning(f"لا توجد ملفات Word متوفرة في مجلد المستخدم ({user_folder_name}).")
     else:
-        # استخدام مفتاح متجدد (Key) لإجبار الـ Selectbox على إعادة التعيين تلقائياً
+        # إضافة خيار فارغ افتراضي في القائمة
+        template_options = ["-- Select Template --"] + template_files
+        
         selected_template = st.selectbox(
             "اختر النموذج المطلوب معالجته:", 
-            template_files, 
+            template_options, 
             key=f"template_select_{st.session_state['form_reset_key']}"
         )
+
+        # إذا لم يتم اختيار نموذج بعد، نتوقف عن عرض الحقول حتى يختار المستخدم
+        if selected_template == "-- Select Template --":
+            st.info("👆 يرجى اختيار النموذج من القائمة أعلاه لبدء إدخال البيانات.")
+            st.stop()
 
         st.markdown("---")
         st.subheader("إدخال البيانات المتغيرة والنشاط التجاري")
@@ -305,13 +312,13 @@ else:
 
                             st.success("🎉 تم تحديث المستند وتحويله بصيغة PDF بنجاح تام!")
                             
-                            # زر التنزيل
+                            # زر التنزيل مع تصفير القائمة وإعادة تحميل الصفحة تلقائياً
                             st.download_button(
                                 label="📥 تنزيل المستند بصيغة PDF النهائي",
                                 data=pdf_bytes,
                                 file_name=f"{logged_user_key}_{os.path.splitext(selected_template)[0]}.pdf",
                                 mime="application/pdf",
-                                on_click=lambda: st.session_state.update({"form_reset_key": st.session_state["form_reset_key"] + 1})
+                                on_click=lambda: (st.session_state.update({"form_reset_key": st.session_state["form_reset_key"] + 1}), st.rerun())
                             )
                         else:
                             st.error("❌ تعذر تحويل الملف إلى PDF لعدم توفر محرك تحويل على البيئة الحالية.")
