@@ -67,9 +67,8 @@ def load_mcc_database():
 
 MCC_MAPPING, AVAILABLE_SEGMENTS = load_mcc_database()
 
-# قائمة المحافظات العراقية الثابتة + خيار Other
-IRAQ_REGIONS = [
-    "-- Select Region --",
+# قائمة المحافظات العراقية الثابتة
+RAW_REGIONS = [
     "Baghdad",
     "Basrah",
     "Nineveh",
@@ -88,8 +87,7 @@ IRAQ_REGIONS = [
     "Al-Muthanna",
     "Maysan",
     "Thi Qar",
-    "Halabja",
-    "Other"
+    "Halabja"
 ]
 
 # إدارة حالة تسجيل الدخول عبر Session State
@@ -171,15 +169,29 @@ else:
 
         kyc_status = st.text_input("KYC STATUS (مثال: Approved / Pending)")
         
-        # قائمة المحافظات الثابتة مع خيار Other
-        selected_region = st.selectbox("Select Region (المحافظة):", IRAQ_REGIONS)
+        # ==========================================
+        # 🏛️ نظام البحث الذكي للمحافظة مع إظهار Other تلقائياً
+        # ==========================================
+        region_search = st.text_input("Search or Enter Region (ابحث عن المحافظة):").strip()
         
-        if selected_region == "Other":
-            region = st.text_input("Enter Custom Region (أدخل اسم المحافظة يدوياً):")
-        elif selected_region != "-- Select Region --":
-            region = selected_region
+        # فلترة المحافظات بناءً على ما يكتبه المستخدم
+        matched_regions = [r for r in RAW_REGIONS if region_search.lower() in r.lower()] if region_search else RAW_REGIONS
+
+        if region_search and not matched_regions:
+            # إذا كتب كلمة ولم تظهر أي نتيجة في القائمة، يظهر خيار Other تلقائياً ومباشرة
+            st.info("💡 المحافظة غير مدرجة بالقائمة، تم اختيار (Other) تلقائياً.")
+            selected_region = "Other"
+            region = st.text_input("Enter Custom Region (أدخل اسم المحافظة يدوياً):", value=region_search)
         else:
-            region = ""
+            region_options = ["-- Select Region --"] + matched_regions + ["Other"]
+            selected_region = st.selectbox("Select Region (المحافظة):", region_options)
+            
+            if selected_region == "Other":
+                region = st.text_input("Enter Custom Region (أدخل اسم المحافظة يدوياً):", value=region_search if region_search not in RAW_REGIONS else "")
+            elif selected_region != "-- Select Region --":
+                region = selected_region
+            else:
+                region = ""
 
         office_name_en = st.text_input("Office Name EN")
         office_name_ar = st.text_input("Office Name Ar")
