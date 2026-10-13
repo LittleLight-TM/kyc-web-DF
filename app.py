@@ -123,7 +123,6 @@ else:
     if not template_files:
         st.warning(f"لا توجد ملفات Word متوفرة في مجلد المستخدم ({user_folder_name}).")
     else:
-        # إضافة خيار فارغ افتراضي في القائمة
         template_options = ["-- Select Template --"] + template_files
         
         selected_template = st.selectbox(
@@ -132,7 +131,6 @@ else:
             key=f"template_select_{st.session_state['form_reset_key']}"
         )
 
-        # إذا لم يتم اختيار نموذج بعد، نتوقف عن عرض الحقول حتى يختار المستخدم
         if selected_template == "-- Select Template --":
             st.info("👆 يرجى اختيار النموذج من القائمة أعلاه لبدء إدخال البيانات.")
             st.stop()
@@ -148,18 +146,15 @@ else:
         merchant_id_val = st.number_input("Merchant_ID", min_value=0, step=1, value=None, placeholder="أرقام فقط")
         merchant_id = str(merchant_id_val) if merchant_id_val is not None else ""
 
-        segment_options = AVAILABLE_SEGMENTS + ["➕ Other / Manual Entry (نشاط غير مدرج)"]
-        selected_segment = st.selectbox("Select Business Activity (Segment):", segment_options)
+        # القائمة المنسدلة للأنشطة من الإكسل حصرياً وبدون علامات زائد
+        selected_segment = st.selectbox("Select Business Activity (Segment):", AVAILABLE_SEGMENTS)
 
-        if selected_segment == "➕ Other / Manual Entry (نشاط غير مدرج)":
-            nature_of_activity = st.text_input("Enter Custom Activity (أدخل اسم النشاط يدوياً):")
-            mcc_val_input = st.number_input("Enter MCC Code (أدخل رمز MCC المكون من 4 أرقام يدوياً):", min_value=0, step=1, value=None)
-            mcc = str(mcc_val_input) if mcc_val_input is not None else ""
-        else:
-            nature_of_activity = selected_segment
-            auto_mcc = MCC_MAPPING.get(selected_segment, "")
-            mcc_val_input = st.text_input("MCC (Auto-fetched from Excel)", value=auto_mcc)
-            mcc = mcc_val_input
+        nature_of_activity = selected_segment
+        auto_mcc = MCC_MAPPING.get(selected_segment, "")
+        
+        # عرض رمز الـ MCC وتحريره إذا لزم الأمر
+        mcc_val_input = st.text_input("MCC (Auto-fetched from Excel)", value=auto_mcc)
+        mcc = mcc_val_input
 
         def validate_inputs(status, region_val, name_en, name_ar, m_id, mcc_code):
             errors = []
@@ -312,7 +307,6 @@ else:
 
                             st.success("🎉 تم تحديث المستند وتحويله بصيغة PDF بنجاح تام!")
                             
-                            # زر التنزيل مع تصفير القائمة وإعادة تحميل الصفحة تلقائياً
                             st.download_button(
                                 label="📥 تنزيل المستند بصيغة PDF النهائي",
                                 data=pdf_bytes,
