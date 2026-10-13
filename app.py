@@ -67,7 +67,7 @@ def load_mcc_database():
 
 MCC_MAPPING, AVAILABLE_SEGMENTS = load_mcc_database()
 
-# قائمة المحافظات العراقية الثابتة
+# قائمة المحافظات العراقية الثابتة (مصصححة تماماً)
 IRAQ_REGIONS = [
     "-- Select Region --",
     "Baghdad",
@@ -85,13 +85,11 @@ IRAQ_REGIONS = [
     "Salah al-Din",
     "Duhok",
     "Diwaniyah (Qadisiyah)",
-    Muthanna,
+    "Al-Muthanna",
     "Maysan",
     "Thi Qar",
     "Halabja"
 ]
-# تصحيح بسيط لمثنى
-IRAQ_REGIONS = [r if r != "Muthanna" else "Al-Muthanna" for r in IRAQ_REGIONS]
 
 # إدارة حالة تسجيل الدخول عبر Session State
 if "authenticated" not in st.session_state:
@@ -172,7 +170,7 @@ else:
 
         kyc_status = st.text_input("KYC STATUS (مثال: Approved / Pending)")
         
-        # تحويل حقل الـ Region إلى قائمة منسدلة ثابتة (Fixed Options)
+        # قائمة المحافظات الثابتة
         selected_region = st.selectbox("Select Region (المحافظة):", IRAQ_REGIONS)
         region = selected_region if selected_region != "-- Select Region --" else ""
 
@@ -262,99 +260,3 @@ else:
             strip_form_fields(doc)
             replacements = {f"{{{{{key}}}}}" : val for key, val in data.items() if val}
             if not replacements:
-                return
-                
-            for p in doc.paragraphs:
-                replace_in_paragraph(p, replacements)
-
-            for table in doc.tables:
-                for row in table.rows:
-                    for cell in row.cells:
-                        for p in cell.paragraphs:
-                            replace_in_paragraph(p, replacements)
-
-            for section in doc.sections:
-                for p in section.header.paragraphs:
-                    replace_in_paragraph(p, replacements)
-                for p in section.footer.paragraphs:
-                    replace_in_paragraph(p, replacements)
-
-        def convert_to_pdf(docx_path, output_pdf_path):
-            abs_docx = os.path.abspath(docx_path)
-            abs_pdf = os.path.abspath(output_pdf_path)
-
-            try:
-                from docx2pdf import convert
-                convert(abs_docx, abs_pdf)
-                if os.path.exists(abs_pdf):
-                    return True
-            except Exception:
-                pass
-
-            if sys.platform == "win32":
-                try:
-                    import pythoncom
-                    import win32com.client
-                    pythoncom.CoInitialize()
-                    word = win32com.client.DispatchEx("Word.Application")
-                    word.Visible = False
-                    doc = word.Documents.Open(abs_docx)
-                    doc.Fields.Unlink()
-                    doc.SaveAs(abs_pdf, FileFormat=17)
-                    doc.Close(False)
-                    word.Quit()
-                    if os.path.exists(abs_pdf):
-                        return True
-                except Exception:
-                    pass
-
-            try:
-                cmd = f'libreoffice --headless --convert-to pdf "{abs_docx}" --outdir "{os.path.dirname(abs_pdf)}"'
-                subprocess.run(cmd, shell=True, check=True)
-                if os.path.exists(abs_pdf):
-                    return True
-            except Exception:
-                pass
-
-            return False
-
-        if st.button("معالجة وتجهيز المستند (PDF)", type="primary"):
-            validation_errors = validate_inputs(kyc_status, region, office_name_en, office_name_ar, merchant_id, mcc)
-            
-            if validation_errors:
-                for err in validation_errors:
-                    st.error(err)
-                st.warning("⚠️ يرجى تصحيح الأخطاء أعلاه لتجنب رفض المعاملة.")
-            else:
-                template_path = os.path.join(TEMPLATES_DIR, user_folder_name, selected_template)
-                try:
-                    doc = Document(template_path)
-                    replace_placeholders(doc, data)
-
-                    with tempfile.TemporaryDirectory() as temp_dir:
-                        temp_docx = os.path.join(temp_dir, "temp_processed.docx")
-                        temp_pdf = os.path.join(temp_dir, "temp_processed.pdf")
-
-                        doc.save(temp_docx)
-
-                        with st.spinner("جاري معالجة المستند وتحويله إلى PDF بدقة عالية... يرجى الانتظار"):
-                            success = convert_to_pdf(temp_docx, temp_pdf)
-
-                        if success and os.path.exists(temp_pdf):
-                            with open(temp_pdf, "rb") as f:
-                                pdf_bytes = f.read()
-
-                            st.success("🎉 تم تحديث المستند وتحويله بصيغة PDF بنجاح تام!")
-                            
-                            st.download_button(
-                                label="📥 تنزيل المستند بصيغة PDF النهائي",
-                                data=pdf_bytes,
-                                file_name=f"{logged_user_key}_{os.path.splitext(selected_template)[0]}.pdf",
-                                mime="application/pdf",
-                                on_click=lambda: (st.session_state.update({"form_reset_key": st.session_state["form_reset_key"] + 1}), st.rerun())
-                            )
-                        else:
-                            st.error("❌ تعذر تحويل الملف إلى PDF لعدم توفر محرك تحويل على البيئة الحالية.")
-
-                except Exception as e:
-                    st.error(f"حدث خطأ أثناء معالجة المستند: {e}")
