@@ -34,13 +34,13 @@ else:
 TEMPLATES_DIR = os.path.join(BASE_DIR, "templates")
 
 # ==========================================
-# 📊 دمج اللغتين (عربي + إنجليزي) في القائمة، والاحتفاظ بالإنجليزي للملف
+# 📊 فصل الأنشطة الإنجليزية المدمجة وتنسيق العرض (إنجليزي منفرد — عربي مع الزائد)
 # ==========================================
 @st.cache_data
 def load_mcc_database():
     mcc_file_path = os.path.join(BASE_DIR, "MCC NEW.xlsx")
     mcc_dict = {}
-    display_map = {} # لربط العرض المزدوج بالنص الإنجليزي الفعلي
+    display_map = {} 
     dropdown_labels = set()
     
     if os.path.exists(mcc_file_path):
@@ -55,19 +55,19 @@ def load_mcc_database():
                     mcc_val = mcc_val[:-2]
                 
                 if seg_en and seg_en.lower() != 'nan':
+                    # فصل الأنشطة الإنجليزية عند وجود علامة الزائد أو الفاصلة
                     clean_seg_en = seg_en.replace('(', '').replace(')', '').strip()
+                    parts_en = [p.strip() for p in clean_seg_en.replace('+', ',').replace('/', ',').split(',')]
                     
-                    if seg_ar and seg_ar.lower() != 'nan':
-                        clean_seg_ar = seg_ar.strip()
-                        mcc_dict[clean_seg_en] = mcc_val
-                        # التنسيق المزدوج: إنجليزي وبجانبه العربي الكامل مع الزائد
-                        label = f"{clean_seg_en} — ({clean_seg_ar})"
-                        display_map[label] = clean_seg_en
-                        dropdown_labels.add(label)
-                    else:
-                        mcc_dict[clean_seg_en] = mcc_val
-                        display_map[clean_seg_en] = clean_seg_en
-                        dropdown_labels.add(clean_seg_en)
+                    clean_seg_ar = seg_ar.replace('(', '').replace(')', '').strip() if seg_ar and seg_ar.lower() != 'nan' else ""
+                    
+                    for part_en in parts_en:
+                        if part_en:
+                            mcc_dict[part_en] = mcc_val
+                            # تنسيق العرض: الإنجليزي المفرد وبجانبه العربي الكامل مع علامات الزائد
+                            label = f"{part_en} — ({clean_seg_ar})"
+                            display_map[label] = part_en
+                            dropdown_labels.add(label)
         except Exception as e:
             st.error(f"خطأ في قراءة ملف الـ MCC: {e}")
             
@@ -161,7 +161,7 @@ else:
         merchant_id_val = st.number_input("Merchant_ID", min_value=0, step=1, value=None, placeholder="أرقام فقط")
         merchant_id = str(merchant_id_val) if merchant_id_val is not None else ""
 
-        # عرض الخيارات بالشكل المزدوج (عربي + إنجليزي) في الموقع
+        # قائمة الأنشطة المفصولة إنجليزياً ومعروضة مع العربي الكامل
         segment_options = AVAILABLE_SEGMENTS + ["Other"]
         selected_dropdown_label = st.selectbox("Select Business Activity (Segment):", segment_options)
 
@@ -170,7 +170,7 @@ else:
             mcc_val_input = st.text_input("Enter MCC Code (أدخل رمز MCC المكون من 4 أرقام):", value="")
             mcc = mcc_val_input
         else:
-            # استخلاص النص الإنجليزي النقي وإرساله للنموذج النهائي
+            # استخراج النص الإنجليزي النقي والمفرد للملف النهائي
             nature_of_activity = DISPLAY_MAP.get(selected_dropdown_label, selected_dropdown_label)
             auto_mcc = MCC_MAPPING.get(nature_of_activity, "")
             mcc_val_input = st.text_input("MCC (Auto-fetched for Selected Activity)", value=auto_mcc)
