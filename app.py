@@ -34,13 +34,13 @@ else:
 TEMPLATES_DIR = os.path.join(BASE_DIR, "templates")
 
 # ==========================================
-# 📊 تحميل قواميس الـ MCC باللغة الإنجليزية من ملف الإكسل
+# 📊 تفكيك الأنشطة المدمجة وفصل الأنشطة تلقائياً مع ربط الـ MCC
 # ==========================================
 @st.cache_data
 def load_mcc_database():
     mcc_file_path = os.path.join(BASE_DIR, "MCC NEW.xlsx")
     mcc_dict = {}
-    segments_list = []
+    individual_activities = set()
     
     if os.path.exists(mcc_file_path):
         try:
@@ -51,13 +51,20 @@ def load_mcc_database():
                 mcc_val = str(row['MCC']).strip()
                 if mcc_val.endswith('.0'):
                     mcc_val = mcc_val[:-2]
+                
                 if seg_en and seg_en.lower() != 'nan':
-                    mcc_dict[seg_en] = mcc_val
-                    segments_list.append(seg_en)
+                    # تفكيك النص عند وجود + أو , أو / لإزالة الجمع والتكرار
+                    clean_seg = seg_en.replace('(', '').replace(')', '')
+                    parts = [p.strip() for p in clean_seg.replace('+', ',').replace('/', ',').split(',')]
+                    
+                    for part in parts:
+                        if part:
+                            mcc_dict[part] = mcc_val
+                            individual_activities.add(part)
         except Exception as e:
             st.error(f"خطأ في قراءة ملف الـ MCC: {e}")
             
-    return mcc_dict, sorted(list(set(segments_list)))
+    return mcc_dict, sorted(list(individual_activities))
 
 MCC_MAPPING, AVAILABLE_SEGMENTS = load_mcc_database()
 
@@ -110,7 +117,7 @@ else:
             st.rerun()
 
     st.title("نظام معالجة وتحديث نماذج KYC الذكي")
-    st.write("قم بتحديد النموذج المطلوب والنشاط التجاري (باللغة الإنجليزية) لضمان دقة رموز الـ MCC.")
+    st.write("قم بتحديد النموذج المطلوب والنشاط التجاري (مفصل وبدون علامات +) لضمان دقة رموز الـ MCC.")
 
     def get_user_templates(folder_name):
         user_path = os.path.join(TEMPLATES_DIR, folder_name)
@@ -146,14 +153,13 @@ else:
         merchant_id_val = st.number_input("Merchant_ID", min_value=0, step=1, value=None, placeholder="أرقام فقط")
         merchant_id = str(merchant_id_val) if merchant_id_val is not None else ""
 
-        # القائمة المنسدلة للأنشطة من الإكسل حصرياً وبدون علامات زائد
-        selected_segment = st.selectbox("Select Business Activity (Segment):", AVAILABLE_SEGMENTS)
+        # اختيار النشاط المفصل (Individual Business Activity)
+        selected_segment = st.selectbox("Select Business Activity (Single Activity):", AVAILABLE_SEGMENTS)
 
         nature_of_activity = selected_segment
         auto_mcc = MCC_MAPPING.get(selected_segment, "")
         
-        # عرض رمز الـ MCC وتحريره إذا لزم الأمر
-        mcc_val_input = st.text_input("MCC (Auto-fetched from Excel)", value=auto_mcc)
+        mcc_val_input = st.text_input("MCC (Auto-fetched for Selected Activity)", value=auto_mcc)
         mcc = mcc_val_input
 
         def validate_inputs(status, region_val, name_en, name_ar, m_id, mcc_code):
