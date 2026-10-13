@@ -47,17 +47,15 @@ def load_mcc_database():
             df = pd.read_excel(mcc_file_path, sheet_name="Sheet1")
             valid_df = df.dropna(subset=['MCC'])
             for _, row in valid_df.iterrows():
-                # استخدام العمود الإنجليزي Segment.1 كمعيار أساسي للعرض
                 seg_en = str(row['Segment.1']).strip()
                 mcc_val = str(row['MCC']).strip()
-                # تنظيف الرقم إذا كان بصيغة عشرية
                 if mcc_val.endswith('.0'):
                     mcc_val = mcc_val[:-2]
                 if seg_en and seg_en.lower() != 'nan':
                     mcc_dict[seg_en] = mcc_val
                     segments_list.append(seg_en)
         except Exception as e:
-            st.error(f"خطأ في قراءة ملف الـ MCC (تأكد من تثبيت openpyxl): {e}")
+            st.error(f"خطأ في قراءة ملف الـ MCC: {e}")
             
     return mcc_dict, sorted(list(set(segments_list)))
 
@@ -98,7 +96,6 @@ else:
     logged_user_key = st.session_state["logged_user"]
     user_folder_name = USER_CREDENTIALS[logged_user_key]["folder"]
 
-    # شريط علوي لإظهار المستخدم الحالي وزر الخروج
     col_user, col_logout = st.columns([3, 1])
     with col_user:
         st.write(f"👤 **المستخدم الحالي:** `{logged_user_key}` ({user_folder_name})")
@@ -111,7 +108,6 @@ else:
     st.title("نظام معالجة وتحديث نماذج KYC الذكي")
     st.write("قم بتحديد النموذج المطلوب والنشاط التجاري (باللغة الإنجليزية) لضمان دقة رموز الـ MCC.")
 
-    # جلب النماذج من مجلد المستخدم
     def get_user_templates(folder_name):
         user_path = os.path.join(TEMPLATES_DIR, folder_name)
         if os.path.exists(user_path):
@@ -136,9 +132,6 @@ else:
         merchant_id_val = st.number_input("Merchant_ID", min_value=0, step=1, value=None, placeholder="أرقام فقط")
         merchant_id = str(merchant_id_val) if merchant_id_val is not None else ""
 
-        # ==========================================
-        # 📂 القائمة المنسدلة للأنشطة بالإنجليزية + خيار الإدخال اليدوي
-        # ==========================================
         segment_options = AVAILABLE_SEGMENTS + ["➕ Other / Manual Entry (نشاط غير مدرج)"]
         selected_segment = st.selectbox("Select Business Activity (Segment):", segment_options)
 
@@ -149,13 +142,9 @@ else:
         else:
             nature_of_activity = selected_segment
             auto_mcc = MCC_MAPPING.get(selected_segment, "")
-            # إتاحة عرض وتعديل رمز الـ MCC المستخرج آلياً تحسباً لأي حاجة
             mcc_val_input = st.text_input("MCC (Auto-fetched from Excel)", value=auto_mcc)
             mcc = mcc_val_input
 
-        # ==========================================
-        # 🛡️ طبقة التحقق الذكي (Smart Validation Layer)
-        # ==========================================
         def validate_inputs(status, region_val, name_en, name_ar, m_id, mcc_code):
             errors = []
             if not status.strip():
@@ -240,19 +229,30 @@ else:
                 for p in section.footer.paragraphs:
                     replace_in_paragraph(p, replacements)
 
-        def convert_to_pdf(docx_path, output_pdf_path, temp_dir):
+        # ==========================================
+        # 🔄 دالة تحويل قوية ومضمونة للـ PDF عبر docx2pdf أو LibreOffice
+        # ==========================================
+        def convert_to_pdf(docx_path, output_pdf_path):
             abs_docx = os.path.abspath(docx_path)
             abs_pdf = os.path.abspath(output_pdf_path)
 
+            # 1. المحاولة باستخدام مكتبة docx2pdf (تدعم ويندوز وماك بكفاءة عالية)
+            try:
+                from docx2pdf import convert
+                convert(abs_docx, abs_pdf)
+                if os.path.exists(abs_pdf):
+                    return True
+            except Exception:
+                pass
+
+            # 2. المحاولة عبر نظام ويندوز الداخلي (COM Dispatch)
             if sys.platform == "win32":
                 try:
                     import pythoncom
                     import win32com.client
                     pythoncom.CoInitialize()
-                    
                     word = win32com.client.DispatchEx("Word.Application")
                     word.Visible = False
-                    
                     doc = word.Documents.Open(abs_docx)
                     doc.Fields.Unlink()
                     doc.SaveAs(abs_pdf, FileFormat=17)
@@ -263,9 +263,10 @@ else:
                 except Exception:
                     pass
 
+            # 3. المحاولة عبر LibreOffice
             try:
-                cmd = f'libreoffice --headless --convert-to "pdf:writer_pdf_Export:{{\"ExportFormFields\":{{\"type\":\"boolean\",\"value\":\"false\"}}}}" "{abs_docx}" --outdir "{temp_dir}"'
-                subprocess.run(cmd, shell+True, check=True)
+                cmd = f'libreoffice --headless --convert-to pdf "{abs_docx}" --outdir "{os.path.dirname(abs_pdf)}"'
+                subprocess.run(cmd, shell=True, check=True)
                 if os.path.exists(abs_pdf):
                     return True
             except Exception:
@@ -292,31 +293,22 @@ else:
 
                         doc.save(temp_docx)
 
-                        with st.spinner("جاري معالجة المستند وتحويله إلى PDF... يرجى الانتظار"):
-                            success = convert_to_pdf(temp_docx, temp_pdf, temp_dir)
+                        with st.spinner("جاري معالجة المستند وتحويله إلى PDF بدقة عالية... يرجى الانتظار"):
+                            success = convert_to_pdf(temp_docx, temp_pdf)
 
                         if success and os.path.exists(temp_pdf):
                             with open(temp_pdf, "rb") as f:
                                 pdf_bytes = f.read()
 
-                            st.success("🎉 تم تحديث المستند وتحويله إلى PDF بنجاح!")
+                            st.success("🎉 تم تحديث المستند وتحويله إلى بصيغة PDF بنجاح تام!")
                             st.download_button(
-                                label="تنزيل المستند بصيغة PDF",
+                                label="📥 تنزيل المستند بصيغة PDF النهائي",
                                 data=pdf_bytes,
                                 file_name=f"{logged_user_key}_{os.path.splitext(selected_template)[0]}.pdf",
                                 mime="application/pdf"
                             )
                         else:
-                            st.warning("تعذر تحويل الملف إلى PDF تلقائياً، يمكنك تنزيله بصيغة DOCX:")
-                            bio = io.BytesIO()
-                            doc.save(bio)
-                            bio.seek(0)
-                            st.download_button(
-                                label="تنزيل المستند بصيغة DOCX",
-                                data=bio,
-                                file_name=f"{logged_user_key}_{selected_template}",
-                                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                            )
+                            st.error("❌ تعذر تحويل الملف إلى PDF لعدم توفر محرك تحويل (مثل Word أو docx2pdf) على البيئة الحالية.")
 
                 except Exception as e:
                     st.error(f"حدث خطأ أثناء معالجة المستند: {e}")
