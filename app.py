@@ -34,7 +34,7 @@ else:
 TEMPLATES_DIR = os.path.join(BASE_DIR, "templates")
 
 # ==========================================
-# 📊 تفكيك الأنشطة المدمجة وفصل الأنشطة تلقائياً مع ربط الـ MCC
+# 📊 تفكيك الأنشطة المفصلة وربط الـ MCC من ملف الإكسل
 # ==========================================
 @st.cache_data
 def load_mcc_database():
@@ -53,7 +53,6 @@ def load_mcc_database():
                     mcc_val = mcc_val[:-2]
                 
                 if seg_en and seg_en.lower() != 'nan':
-                    # تفكيك النص عند وجود + أو , أو / لإزالة الجمع والتكرار
                     clean_seg = seg_en.replace('(', '').replace(')', '')
                     parts = [p.strip() for p in clean_seg.replace('+', ',').replace('/', ',').split(',')]
                     
@@ -117,7 +116,7 @@ else:
             st.rerun()
 
     st.title("نظام معالجة وتحديث نماذج KYC الذكي")
-    st.write("قم بتحديد النموذج المطلوب والنشاط التجاري (مفصل وبدون علامات +) لضمان دقة رموز الـ MCC.")
+    st.write("قم بتحديد النموذج المطلوب والنشاط التجاري مع إمكانية استخدام خيار (Other) للأنشطة اليدوية.")
 
     def get_user_templates(folder_name):
         user_path = os.path.join(TEMPLATES_DIR, folder_name)
@@ -153,14 +152,19 @@ else:
         merchant_id_val = st.number_input("Merchant_ID", min_value=0, step=1, value=None, placeholder="أرقام فقط")
         merchant_id = str(merchant_id_val) if merchant_id_val is not None else ""
 
-        # اختيار النشاط المفصل (Individual Business Activity)
-        selected_segment = st.selectbox("Select Business Activity (Single Activity):", AVAILABLE_SEGMENTS)
+        # إضافة خيار Other إلى القائمة المنسدلة للأنشطة
+        segment_options = AVAILABLE_SEGMENTS + ["Other"]
+        selected_segment = st.selectbox("Select Business Activity (Segment):", segment_options)
 
-        nature_of_activity = selected_segment
-        auto_mcc = MCC_MAPPING.get(selected_segment, "")
-        
-        mcc_val_input = st.text_input("MCC (Auto-fetched for Selected Activity)", value=auto_mcc)
-        mcc = mcc_val_input
+        if selected_segment == "Other":
+            nature_of_activity = st.text_input("Enter Custom Activity (أدخل النشاط يدوياً):")
+            mcc_val_input = st.text_input("Enter MCC Code (أدخل رمز MCC المكون من 4 أرقام):", value="")
+            mcc = mcc_val_input
+        else:
+            nature_of_activity = selected_segment
+            auto_mcc = MCC_MAPPING.get(selected_segment, "")
+            mcc_val_input = st.text_input("MCC (Auto-fetched for Selected Activity)", value=auto_mcc)
+            mcc = mcc_val_input
 
         def validate_inputs(status, region_val, name_en, name_ar, m_id, mcc_code):
             errors = []
