@@ -34,7 +34,7 @@ else:
 TEMPLATES_DIR = os.path.join(BASE_DIR, "templates")
 
 # ==========================================
-# 📊 تفكيك الأنشطة وربط الـ MCC من ملف الإكسل
+# 📊 تفكيك الأنشطة المفصلة وربط الـ MCC من ملف الإكسل
 # ==========================================
 @st.cache_data
 def load_mcc_database():
@@ -66,29 +66,6 @@ def load_mcc_database():
     return mcc_dict, sorted(list(individual_activities))
 
 MCC_MAPPING, AVAILABLE_SEGMENTS = load_mcc_database()
-
-# قائمة المحافظات العراقية الثابتة
-RAW_REGIONS = [
-    "Baghdad",
-    "Basrah",
-    "Nineveh",
-    "Erbil",
-    "Sulaymaniyah",
-    "Kirkuk",
-    "Anbar",
-    "Diyala",
-    "Babylon",
-    "Najaf",
-    "Karbala",
-    "Wasit",
-    "Salah al-Din",
-    "Duhok",
-    "Diwaniyah (Qadisiyah)",
-    "Al-Muthanna",
-    "Maysan",
-    "Thi Qar",
-    "Halabja"
-]
 
 # إدارة حالة تسجيل الدخول عبر Session State
 if "authenticated" not in st.session_state:
@@ -139,7 +116,7 @@ else:
             st.rerun()
 
     st.title("نظام معالجة وتحديث نماذج KYC الذكي")
-    st.write("قم بتحديد النموذج المطلوب، المحافظة، والنشاط التجاري بكل دقة.")
+    st.write("قم بتحديد النموذج المطلوب والنشاط التجاري مع إمكانية استخدام خيار (Other) للأنشطة اليدوية.")
 
     def get_user_templates(folder_name):
         user_path = os.path.join(TEMPLATES_DIR, folder_name)
@@ -168,37 +145,14 @@ else:
         st.subheader("إدخال البيانات المتغيرة والنشاط التجاري")
 
         kyc_status = st.text_input("KYC STATUS (مثال: Approved / Pending)")
-        
-        # ==========================================
-        # 🏛️ نظام البحث الذكي للمحافظة مع إظهار Other تلقائياً
-        # ==========================================
-        region_search = st.text_input("Search or Enter Region (ابحث عن المحافظة):").strip()
-        
-        # فلترة المحافظات بناءً على ما يكتبه المستخدم
-        matched_regions = [r for r in RAW_REGIONS if region_search.lower() in r.lower()] if region_search else RAW_REGIONS
-
-        if region_search and not matched_regions:
-            # إذا كتب كلمة ولم تظهر أي نتيجة في القائمة، يظهر خيار Other تلقائياً ومباشرة
-            st.info("💡 المحافظة غير مدرجة بالقائمة، تم اختيار (Other) تلقائياً.")
-            selected_region = "Other"
-            region = st.text_input("Enter Custom Region (أدخل اسم المحافظة يدوياً):", value=region_search)
-        else:
-            region_options = ["-- Select Region --"] + matched_regions + ["Other"]
-            selected_region = st.selectbox("Select Region (المحافظة):", region_options)
-            
-            if selected_region == "Other":
-                region = st.text_input("Enter Custom Region (أدخل اسم المحافظة يدوياً):", value=region_search if region_search not in RAW_REGIONS else "")
-            elif selected_region != "-- Select Region --":
-                region = selected_region
-            else:
-                region = ""
-
+        region = st.text_input("Region (مثال: Baghdad / Karbala)")
         office_name_en = st.text_input("Office Name EN")
         office_name_ar = st.text_input("Office Name Ar")
         
         merchant_id_val = st.number_input("Merchant_ID", min_value=0, step=1, value=None, placeholder="أرقام فقط")
         merchant_id = str(merchant_id_val) if merchant_id_val is not None else ""
 
+        # إضافة خيار Other إلى القائمة المنسدلة للأنشطة
         segment_options = AVAILABLE_SEGMENTS + ["Other"]
         selected_segment = st.selectbox("Select Business Activity (Segment):", segment_options)
 
@@ -217,7 +171,7 @@ else:
             if not status.strip():
                 errors.append("حقل KYC STATUS إلزامي.")
             if not region_val.strip():
-                errors.append("يجب اختيار أو كتابة المحافظة (Region).")
+                errors.append("حقل Region إلزامي.")
             if not name_en.strip() or not name_ar.strip():
                 errors.append("يجب إدخال اسم المكتب باللغتين العربية والإنجليزية بدقة.")
             if not m_id.strip() or len(m_id) < 5:
