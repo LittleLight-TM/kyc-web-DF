@@ -21,7 +21,7 @@ USER_CREDENTIALS = {
     },
     "saif": {
         "password": "saif",        # كلمة المرور لسيف
-        "folder": "سيف"           # اسم المجلد الخاص به
+        "folder": "سيف"            # اسم المجلد الخاص به
     }
 }
 
@@ -34,7 +34,7 @@ else:
 TEMPLATES_DIR = os.path.join(BASE_DIR, "templates")
 
 # ==========================================
-# 📊 فصل الأنشطة الإنجليزية المدمجة وتنسيق العرض (إنجليزي منفرد — عربي مع الزائد)
+# 📊 فصل الأنشطة الإنجليزية المدمجة وتنسيق العرض (مع دعم المطابقة غير الحساسة للأحرف)
 # ==========================================
 @st.cache_data
 def load_mcc_database():
@@ -55,7 +55,7 @@ def load_mcc_database():
                     mcc_val = mcc_val[:-2]
                 
                 if seg_en and seg_en.lower() != 'nan':
-                    # فصل الأنشطة الإنجليزية عند وجود علامة الزائد أو الفاصلة
+                    # فصل الأنشطة الإنجليزية عند وجود علامة الزائد أو الفاصلة أو المائلة
                     clean_seg_en = seg_en.replace('(', '').replace(')', '').strip()
                     parts_en = [p.strip() for p in clean_seg_en.replace('+', ',').replace('/', ',').split(',')]
                     
@@ -63,9 +63,13 @@ def load_mcc_database():
                     
                     for part_en in parts_en:
                         if part_en:
+                            # تخزين القيم بصيغ متعددة لتجنب مشاكل تطابق الحروف الكبيرة والصغيرة
                             mcc_dict[part_en] = mcc_val
-                            # تنسيق العرض: الإنجليزي المفرد وبجانبه العربي الكامل مع علامات الزائد
-                            label = f"{part_en} — ({clean_seg_ar})"
+                            mcc_dict[part_en.upper()] = mcc_val
+                            mcc_dict[part_en.lower()] = mcc_val
+                            
+                            # تنسيق العرض: الإنجليزي بأحرف كبيره واضح وبجانبه العربي الكامل
+                            label = f"{part_en.upper()} — ({clean_seg_ar})"
                             display_map[label] = part_en
                             dropdown_labels.add(label)
         except Exception as e:
@@ -170,9 +174,13 @@ else:
             mcc_val_input = st.text_input("Enter MCC Code (أدخل رمز MCC المكون من 4 أرقام):", value="")
             mcc = mcc_val_input
         else:
-            # استخراج النص الإنجليزي النقي والمفرد للملف النهائي
-            nature_of_activity = DISPLAY_MAP.get(selected_dropdown_label, selected_dropdown_label)
-            auto_mcc = MCC_MAPPING.get(nature_of_activity, "")
+            # استخراج النص الإنجليزي النقي والمفرد للملف النهائي مع مطابقة مرنة
+            raw_activity = DISPLAY_MAP.get(selected_dropdown_label, selected_dropdown_label)
+            nature_of_activity = raw_activity
+            
+            # بحث مرن عن رمز MCC بغض النظر عن حالة الأحرف
+            auto_mcc = MCC_MAPPING.get(nature_of_activity, MCC_MAPPING.get(nature_of_activity.upper(), MCC_MAPPING.get(nature_of_activity.lower(), "")))
+            
             mcc_val_input = st.text_input("MCC (Auto-fetched for Selected Activity)", value=auto_mcc)
             mcc = mcc_val_input
 
