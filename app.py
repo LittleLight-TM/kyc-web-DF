@@ -67,7 +67,7 @@ def load_mcc_database():
 
 MCC_MAPPING, AVAILABLE_SEGMENTS = load_mcc_database()
 
-# قائمة المحافظات العراقية الثابتة
+# قائمة المحافظات العراقية الثابتة + خيار Other
 IRAQ_REGIONS = [
     "-- Select Region --",
     "Baghdad",
@@ -88,7 +88,8 @@ IRAQ_REGIONS = [
     "Al-Muthanna",
     "Maysan",
     "Thi Qar",
-    "Halabja"
+    "Halabja",
+    "Other"
 ]
 
 # إدارة حالة تسجيل الدخول عبر Session State
@@ -170,9 +171,15 @@ else:
 
         kyc_status = st.text_input("KYC STATUS (مثال: Approved / Pending)")
         
-        # قائمة المحافظات الثابتة
+        # قائمة المحافظات الثابتة مع خيار Other
         selected_region = st.selectbox("Select Region (المحافظة):", IRAQ_REGIONS)
-        region = selected_region if selected_region != "-- Select Region --" else ""
+        
+        if selected_region == "Other":
+            region = st.text_input("Enter Custom Region (أدخل اسم المحافظة يدوياً):")
+        elif selected_region != "-- Select Region --":
+            region = selected_region
+        else:
+            region = ""
 
         office_name_en = st.text_input("Office Name EN")
         office_name_ar = st.text_input("Office Name Ar")
@@ -198,7 +205,7 @@ else:
             if not status.strip():
                 errors.append("حقل KYC STATUS إلزامي.")
             if not region_val.strip():
-                errors.append("يجب اختيار المحافظة (Region).")
+                errors.append("يجب اختيار أو كتابة المحافظة (Region).")
             if not name_en.strip() or not name_ar.strip():
                 errors.append("يجب إدخال اسم المكتب باللغتين العربية والإنجليزية بدقة.")
             if not m_id.strip() or len(m_id) < 5:
