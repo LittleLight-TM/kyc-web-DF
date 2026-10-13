@@ -1,2 +1,5 @@
 streamlit
+pandas
 python-docx
+openpyxl
+pypdf
