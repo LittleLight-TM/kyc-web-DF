@@ -34,7 +34,7 @@ else:
 TEMPLATES_DIR = os.path.join(BASE_DIR, "templates")
 
 # ==========================================
-# 📊 تحميل قواميس الـ MCC من ملف الإكسل المعتمد
+# 📊 تحميل قواميس الـ MCC باللغة الإنجليزية من ملف الإكسل
 # ==========================================
 @st.cache_data
 def load_mcc_database():
@@ -47,15 +47,17 @@ def load_mcc_database():
             df = pd.read_excel(mcc_file_path, sheet_name="Sheet1")
             valid_df = df.dropna(subset=['MCC'])
             for _, row in valid_df.iterrows():
-                seg_ar = str(row['Segment']).strip()
+                # استخدام العمود الإنجليزي Segment.1 كمعيار أساسي للعرض
+                seg_en = str(row['Segment.1']).strip()
                 mcc_val = str(row['MCC']).strip()
                 # تنظيف الرقم إذا كان بصيغة عشرية
                 if mcc_val.endswith('.0'):
                     mcc_val = mcc_val[:-2]
-                mcc_dict[seg_ar] = mcc_val
-                segments_list.append(seg_ar)
+                if seg_en and seg_en.lower() != 'nan':
+                    mcc_dict[seg_en] = mcc_val
+                    segments_list.append(seg_en)
         except Exception as e:
-            st.error(f"خطأ في قراءة ملف الـ MCC: {e}")
+            st.error(f"خطأ في قراءة ملف الـ MCC (تأكد من تثبيت openpyxl): {e}")
             
     return mcc_dict, sorted(list(set(segments_list)))
 
@@ -107,7 +109,7 @@ else:
             st.rerun()
 
     st.title("نظام معالجة وتحديث نماذج KYC الذكي")
-    st.write("قم بتحديد النموذج المطلوب والنشاط التجاري المعتمد لضمان دقة رموز الـ MCC وعدم الرفض.")
+    st.write("قم بتحديد النموذج المطلوب والنشاط التجاري (باللغة الإنجليزية) لضمان دقة رموز الـ MCC.")
 
     # جلب النماذج من مجلد المستخدم
     def get_user_templates(folder_name):
@@ -134,18 +136,22 @@ else:
         merchant_id_val = st.number_input("Merchant_ID", min_value=0, step=1, value=None, placeholder="أرقام فقط")
         merchant_id = str(merchant_id_val) if merchant_id_val is not None else ""
 
-        # اختيار النشاط التجاري من القائمة المنسدلة المربوطة بملف الإكسل
-        if AVAILABLE_SEGMENTS:
-            selected_segment = st.selectbox("اختر النشاط التجاري (Segment):", AVAILABLE_SEGMENTS)
-            nature_of_activity = selected_segment
-            # استخراج الرمز التلقائي المطابق للنشاط المختار
-            auto_mcc = MCC_MAPPING.get(selected_segment, "")
-        else:
-            nature_of_activity = st.text_input("Nature of Activity")
-            auto_mcc = ""
+        # ==========================================
+        # 📂 القائمة المنسدلة للأنشطة بالإنجليزية + خيار الإدخال اليدوي
+        # ==========================================
+        segment_options = AVAILABLE_SEGMENTS + ["➕ Other / Manual Entry (نشاط غير مدرج)"]
+        selected_segment = st.selectbox("Select Business Activity (Segment):", segment_options)
 
-        # عرض رمز الـ MCC التلقائي المستخرج من الملف مع إمكانية التأكيد
-        mcc = st.text_input("MCC (تم تعبئته تلقائياً من الملف المعتمد)", value=auto_mcc)
+        if selected_segment == "➕ Other / Manual Entry (نشاط غير مدرج)":
+            nature_of_activity = st.text_input("Enter Custom Activity (أدخل اسم النشاط يدوياً):")
+            mcc_val_input = st.number_input("Enter MCC Code (أدخل رمز MCC المكون من 4 أرقام يدوياً):", min_value=0, step=1, value=None)
+            mcc = str(mcc_val_input) if mcc_val_input is not None else ""
+        else:
+            nature_of_activity = selected_segment
+            auto_mcc = MCC_MAPPING.get(selected_segment, "")
+            # إتاحة عرض وتعديل رمز الـ MCC المستخرج آلياً تحسباً لأي حاجة
+            mcc_val_input = st.text_input("MCC (Auto-fetched from Excel)", value=auto_mcc)
+            mcc = mcc_val_input
 
         # ==========================================
         # 🛡️ طبقة التحقق الذكي (Smart Validation Layer)
@@ -161,7 +167,7 @@ else:
             if not m_id.strip() or len(m_id) < 5:
                 errors.append("رقم الـ Merchant ID غير صحيح أو ناقص.")
             if not mcc_code.strip() or len(mcc_code) != 4:
-                errors.append("رمز الـ MCC يجب أن يتكون من 4 أرقام صحيحة (تم جلبها من الملف).")
+                errors.append("رمز الـ MCC يجب أن يتكون من 4 أرقام صحيحة.")
             return errors
 
         data = {
@@ -259,7 +265,7 @@ else:
 
             try:
                 cmd = f'libreoffice --headless --convert-to "pdf:writer_pdf_Export:{{\"ExportFormFields\":{{\"type\":\"boolean\",\"value\":\"false\"}}}}" "{abs_docx}" --outdir "{temp_dir}"'
-                subprocess.run(cmd, shell=True, check=True)
+                subprocess.run(cmd, shell+True, check=True)
                 if os.path.exists(abs_pdf):
                     return True
             except Exception:
@@ -293,7 +299,7 @@ else:
                             with open(temp_pdf, "rb") as f:
                                 pdf_bytes = f.read()
 
-                            st.success("🎉 تم تحديث المستند وتحويله إلى PDF بالرمز الصحيح وبدون أخطاء!")
+                            st.success("🎉 تم تحديث المستند وتحويله إلى PDF بنجاح!")
                             st.download_button(
                                 label="تنزيل المستند بصيغة PDF",
                                 data=pdf_bytes,
