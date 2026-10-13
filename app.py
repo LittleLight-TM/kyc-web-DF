@@ -34,7 +34,7 @@ else:
 TEMPLATES_DIR = os.path.join(BASE_DIR, "templates")
 
 # ==========================================
-# 📊 تفكيك الأنشطة المفصلة وربط الـ MCC من ملف الإكسل
+# 📊 تفكيك الأنشطة وربط الـ MCC من ملف الإكسل
 # ==========================================
 @st.cache_data
 def load_mcc_database():
@@ -66,6 +66,32 @@ def load_mcc_database():
     return mcc_dict, sorted(list(individual_activities))
 
 MCC_MAPPING, AVAILABLE_SEGMENTS = load_mcc_database()
+
+# قائمة المحافظات العراقية الثابتة
+IRAQ_REGIONS = [
+    "-- Select Region --",
+    "Baghdad",
+    "Basrah",
+    "Nineveh",
+    "Erbil",
+    "Sulaymaniyah",
+    "Kirkuk",
+    "Anbar",
+    "Diyala",
+    "Babylon",
+    "Najaf",
+    "Karbala",
+    "Wasit",
+    "Salah al-Din",
+    "Duhok",
+    "Diwaniyah (Qadisiyah)",
+    Muthanna,
+    "Maysan",
+    "Thi Qar",
+    "Halabja"
+]
+# تصحيح بسيط لمثنى
+IRAQ_REGIONS = [r if r != "Muthanna" else "Al-Muthanna" for r in IRAQ_REGIONS]
 
 # إدارة حالة تسجيل الدخول عبر Session State
 if "authenticated" not in st.session_state:
@@ -116,7 +142,7 @@ else:
             st.rerun()
 
     st.title("نظام معالجة وتحديث نماذج KYC الذكي")
-    st.write("قم بتحديد النموذج المطلوب والنشاط التجاري مع إمكانية استخدام خيار (Other) للأنشطة اليدوية.")
+    st.write("قم بتحديد النموذج المطلوب، المحافظة، والنشاط التجاري بكل دقة.")
 
     def get_user_templates(folder_name):
         user_path = os.path.join(TEMPLATES_DIR, folder_name)
@@ -145,14 +171,17 @@ else:
         st.subheader("إدخال البيانات المتغيرة والنشاط التجاري")
 
         kyc_status = st.text_input("KYC STATUS (مثال: Approved / Pending)")
-        region = st.text_input("Region (مثال: Baghdad / Karbala)")
+        
+        # تحويل حقل الـ Region إلى قائمة منسدلة ثابتة (Fixed Options)
+        selected_region = st.selectbox("Select Region (المحافظة):", IRAQ_REGIONS)
+        region = selected_region if selected_region != "-- Select Region --" else ""
+
         office_name_en = st.text_input("Office Name EN")
         office_name_ar = st.text_input("Office Name Ar")
         
         merchant_id_val = st.number_input("Merchant_ID", min_value=0, step=1, value=None, placeholder="أرقام فقط")
         merchant_id = str(merchant_id_val) if merchant_id_val is not None else ""
 
-        # إضافة خيار Other إلى القائمة المنسدلة للأنشطة
         segment_options = AVAILABLE_SEGMENTS + ["Other"]
         selected_segment = st.selectbox("Select Business Activity (Segment):", segment_options)
 
@@ -171,7 +200,7 @@ else:
             if not status.strip():
                 errors.append("حقل KYC STATUS إلزامي.")
             if not region_val.strip():
-                errors.append("حقل Region إلزامي.")
+                errors.append("يجب اختيار المحافظة (Region).")
             if not name_en.strip() or not name_ar.strip():
                 errors.append("يجب إدخال اسم المكتب باللغتين العربية والإنجليزية بدقة.")
             if not m_id.strip() or len(m_id) < 5:
