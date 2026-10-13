@@ -67,6 +67,10 @@ if "authenticated" not in st.session_state:
 if "logged_user" not in st.session_state:
     st.session_state["logged_user"] = None
 
+# مفتاح تصفير النموذج بعد المعالجة
+if "form_reset_key" not in st.session_state:
+    st.session_state["form_reset_key"] = 0
+
 
 # ==========================================
 # 1. شاشة تسجيل الدخول
@@ -119,7 +123,12 @@ else:
     if not template_files:
         st.warning(f"لا توجد ملفات Word متوفرة في مجلد المستخدم ({user_folder_name}).")
     else:
-        selected_template = st.selectbox("اختر النموذج المطلوب معالجته:", template_files)
+        # استخدام مفتاح متجدد (Key) لإجبار الـ Selectbox على إعادة التعيين تلقائياً
+        selected_template = st.selectbox(
+            "اختر النموذج المطلوب معالجته:", 
+            template_files, 
+            key=f"template_select_{st.session_state['form_reset_key']}"
+        )
 
         st.markdown("---")
         st.subheader("إدخال البيانات المتغيرة والنشاط التجاري")
@@ -229,14 +238,10 @@ else:
                 for p in section.footer.paragraphs:
                     replace_in_paragraph(p, replacements)
 
-        # ==========================================
-        # 🔄 دالة تحويل قوية ومضمونة للـ PDF عبر docx2pdf أو LibreOffice
-        # ==========================================
         def convert_to_pdf(docx_path, output_pdf_path):
             abs_docx = os.path.abspath(docx_path)
             abs_pdf = os.path.abspath(output_pdf_path)
 
-            # 1. المحاولة باستخدام مكتبة docx2pdf (تدعم ويندوز وماك بكفاءة عالية)
             try:
                 from docx2pdf import convert
                 convert(abs_docx, abs_pdf)
@@ -245,7 +250,6 @@ else:
             except Exception:
                 pass
 
-            # 2. المحاولة عبر نظام ويندوز الداخلي (COM Dispatch)
             if sys.platform == "win32":
                 try:
                     import pythoncom
@@ -263,7 +267,6 @@ else:
                 except Exception:
                     pass
 
-            # 3. المحاولة عبر LibreOffice
             try:
                 cmd = f'libreoffice --headless --convert-to pdf "{abs_docx}" --outdir "{os.path.dirname(abs_pdf)}"'
                 subprocess.run(cmd, shell=True, check=True)
@@ -300,15 +303,18 @@ else:
                             with open(temp_pdf, "rb") as f:
                                 pdf_bytes = f.read()
 
-                            st.success("🎉 تم تحديث المستند وتحويله إلى بصيغة PDF بنجاح تام!")
+                            st.success("🎉 تم تحديث المستند وتحويله بصيغة PDF بنجاح تام!")
+                            
+                            # زر التنزيل
                             st.download_button(
                                 label="📥 تنزيل المستند بصيغة PDF النهائي",
                                 data=pdf_bytes,
                                 file_name=f"{logged_user_key}_{os.path.splitext(selected_template)[0]}.pdf",
-                                mime="application/pdf"
+                                mime="application/pdf",
+                                on_click=lambda: st.session_state.update({"form_reset_key": st.session_state["form_reset_key"] + 1})
                             )
                         else:
-                            st.error("❌ تعذر تحويل الملف إلى PDF لعدم توفر محرك تحويل (مثل Word أو docx2pdf) على البيئة الحالية.")
+                            st.error("❌ تعذر تحويل الملف إلى PDF لعدم توفر محرك تحويل على البيئة الحالية.")
 
                 except Exception as e:
                     st.error(f"حدث خطأ أثناء معالجة المستند: {e}")
