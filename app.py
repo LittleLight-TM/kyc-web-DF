@@ -34,38 +34,53 @@ else:
 TEMPLATES_DIR = os.path.join(BASE_DIR, "templates")
 
 # ==========================================
-# 📊 تفكيك الأنشطة المفصلة وربط الـ MCC من ملف الإكسل
+# 📊 قراءة الأنشطة باللغتين للعرض، والاحتفاظ بالإنجليزي للنموذج
 # ==========================================
 @st.cache_data
 def load_mcc_database():
     mcc_file_path = os.path.join(BASE_DIR, "MCC NEW.xlsx")
     mcc_dict = {}
-    individual_activities = set()
+    display_options_dict = {} # لتخزين الربط بين (عربي + إنجليزي) و (الإنجليزي فقط)
+    dropdown_labels = set()
     
     if os.path.exists(mcc_file_path):
         try:
             df = pd.read_excel(mcc_file_path, sheet_name="Sheet1")
             valid_df = df.dropna(subset=['MCC'])
             for _, row in valid_df.iterrows():
+                seg_ar = str(row['Segment']).strip()
                 seg_en = str(row['Segment.1']).strip()
                 mcc_val = str(row['MCC']).strip()
                 if mcc_val.endswith('.0'):
                     mcc_val = mcc_val[:-2]
                 
                 if seg_en and seg_en.lower() != 'nan':
-                    clean_seg = seg_en.replace('(', '').replace(')', '')
-                    parts = [p.strip() for p in clean_seg.replace('+', ',').replace('/', ',').split(',')]
+                    clean_seg_en = seg_en.replace('(', '').replace(')', '')
+                    parts_en = [p.strip() for p in clean_seg_en.replace('+', ',').replace('/', ',').split(',')]
                     
-                    for part in parts:
-                        if part:
-                            mcc_dict[part] = mcc_val
-                            individual_activities.add(part)
+                    # محاولة مطابقة العربي مع الإنجليزي إذا وجد
+                    clean_seg_ar = seg_ar.replace('(', '').replace(')', '') if seg_ar and seg_ar.lower() != 'nan' else ""
+                    parts_ar = [p.strip() for p in clean_seg_ar.replace('+', ',').replace('/', ',').split(',')] if clean_seg_ar else []
+                    
+                    for i, part_en in enumerate(parts_en):
+                        if part_en:
+                            mcc_dict[part_en] = mcc_val
+                            # إذا توفر النص العربي المقابل، ندمجه للعرض فقط في الموقع
+                            part_ar = parts_ar[i] if i < len(parts_ar) else ""
+                            
+                            if part_ar and part_ar.lower() != 'nan':
+                                label = f"{part_en} — ({part_ar})"
+                            else:
+                                label = part_en
+                                
+                            display_options_dict[label] = part_en
+                            dropdown_labels.add(label)
         except Exception as e:
             st.error(f"خطأ في قراءة ملف الـ MCC: {e}")
             
-    return mcc_dict, sorted(list(individual_activities))
+    return mcc_dict, display_options_dict, sorted(list(dropdown_labels))
 
-MCC_MAPPING, AVAILABLE_SEGMENTS = load_mcc_database()
+MCC_MAPPING, DISPLAY_MAP, AVAILABLE_SEGMENTS = load_mcc_database()
 
 # إدارة حالة تسجيل الدخول عبر Session State
 if "authenticated" not in st.session_state:
@@ -116,7 +131,7 @@ else:
             st.rerun()
 
     st.title("نظام معالجة وتحديث نماذج KYC الذكي")
-    st.write("قم بتحديد النموذج المطلوب والنشاط التجاري مع إمكانية استخدام خيار (Other) للأنشطة اليدوية.")
+    st.write("قم بتحديد النموذج المطلوب، وإدخال بيانات المحافظة والنشاط التجاري بكل دقة.")
 
     def get_user_templates(folder_name):
         user_path = os.path.join(TEMPLATES_DIR, folder_name)
@@ -145,24 +160,26 @@ else:
         st.subheader("إدخال البيانات المتغيرة والنشاط التجاري")
 
         kyc_status = st.text_input("KYC STATUS (مثال: Approved / Pending)")
-        region = st.text_input("Region (مثال: Baghdad / Karbala)")
+        region = st.text_input("Region (أدخل اسم المحافظة يدوياً)")
+
         office_name_en = st.text_input("Office Name EN")
         office_name_ar = st.text_input("Office Name Ar")
         
         merchant_id_val = st.number_input("Merchant_ID", min_value=0, step=1, value=None, placeholder="أرقام فقط")
         merchant_id = str(merchant_id_val) if merchant_id_val is not None else ""
 
-        # إضافة خيار Other إلى القائمة المنسدلة للأنشطة
+        # عرض القائمة باللغتين (عربي + إنجليزي) في الموقع، واستخلاص النص الإنجليزي فقط للنموذج
         segment_options = AVAILABLE_SEGMENTS + ["Other"]
-        selected_segment = st.selectbox("Select Business Activity (Segment):", segment_options)
+        selected_dropdown_label = st.selectbox("Select Business Activity (Segment):", segment_options)
 
-        if selected_segment == "Other":
+        if selected_dropdown_label == "Other":
             nature_of_activity = st.text_input("Enter Custom Activity (أدخل النشاط يدوياً):")
             mcc_val_input = st.text_input("Enter MCC Code (أدخل رمز MCC المكون من 4 أرقام):", value="")
             mcc = mcc_val_input
         else:
-            nature_of_activity = selected_segment
-            auto_mcc = MCC_MAPPING.get(selected_segment, "")
+            # تحويل التسمية المعروضة (عربي + إنجليزي) إلى النص الإنجليزي النقي حصرياً
+            nature_of_activity = DISPLAY_MAP.get(selected_dropdown_label, selected_dropdown_label)
+            auto_mcc = MCC_MAPPING.get(nature_of_activity, "")
             mcc_val_input = st.text_input("MCC (Auto-fetched for Selected Activity)", value=auto_mcc)
             mcc = mcc_val_input
 
@@ -171,7 +188,7 @@ else:
             if not status.strip():
                 errors.append("حقل KYC STATUS إلزامي.")
             if not region_val.strip():
-                errors.append("حقل Region إلزامي.")
+                errors.append("حقل Region (المحافظة) إلزامي.")
             if not name_en.strip() or not name_ar.strip():
                 errors.append("يجب إدخال اسم المكتب باللغتين العربية والإنجليزية بدقة.")
             if not m_id.strip() or len(m_id) < 5:
