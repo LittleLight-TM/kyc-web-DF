@@ -25,26 +25,8 @@ USER_CREDENTIALS = {
     }
 }
 
-# قائمة تصنيفات المخاطر والنماذج التابعة لكل منها (مع الكلمات المفتاحية الأساسية للبحث المرن)
-RISK_OPTIONS_MAP = {
-    "cash in": [
-        "cash in HIGH +Client risk صيرفات والذهب",
-        "cash in HIGH+Client risk صيرفات الذهب للمحافضات الساخنه"
-    ],
-    "cash out": [
-        "CashOut-form High +Client risk صيرفات والذهب",
-        "CashOut-form High+Client risk صيرفات الذهب للمحافضات الساخنه"
-    ],
-    "pos": [
-        "KYC low+ Client risk LOW",
-        "KYC high + Client risk جنسيات اخرى",
-        "KYC high +Client risk صيرفات والذهب",
-        "KYC high+Client risk جنسيات اخرى للمحافضات",
-        "KYC high+Client risk صيرفات الذهب للمحافضات الساخنه",
-        "KYC high+Client risk صيرفات وذهب للجنسيات",
-        "KYC high+Client risk محافضات ساخنه"
-    ]
-}
+# قائمة تصنيفات المخاطر
+RISK_CATEGORIES = ["cash in", "cash out", "pos"]
 
 # تحديد مسار المجلد الأساسي
 if hasattr(sys, '_MEIPASS'):
@@ -170,43 +152,22 @@ else:
         st.warning(f"لا توجد ملفات Word متوفرة في مجلد المستخدم ({user_folder_name}).")
     else:
         # ==========================================
-        # 🎯 خيار Risk Select وتصفية النماذج بمرونة عالية
+        # 🎯 خيار Risk Select وعرض جميع النماذج بلا استثناء
         # ==========================================
         risk_category = st.selectbox(
             "اختر نوع المخاطرة (Risk Select):",
-            ["-- Select Risk Category --"] + list(RISK_OPTIONS_MAP.keys()),
+            ["-- Select Risk Category --"] + RISK_CATEGORIES,
             key=f"risk_select_{st.session_state['form_reset_key']}"
         )
 
         if risk_category == "-- Select Risk Category --":
-            st.info("👆 يرجى اختيار نوع المخاطرة (Risk Select) لبدء التصفية واختيار النموذج.")
+            st.info("👆 يرجى اختيار نوع المخاطرة (Risk Select) لبدء اختيار النموذج.")
             st.stop()
 
-        expected_options = RISK_OPTIONS_MAP.get(risk_category, [])
-        
-        # دمج وتعديل قائمة الخيارات لتعرض الملفات الموجودة فعلياً في مجلد المستخدم أو القائمة الافتراضية بمرونة
-        available_display_options = []
-        for opt in expected_options:
-            # تنظيف الكلمات الرئيسية للبحث داخل ملفات المجلد
-            keyword_clean = opt.replace("+", " ").replace("-", " ").lower()
-            matched = False
-            for f in template_files:
-                f_clean = os.path.splitext(f)[0].replace("+", " ").replace("-", " ").lower()
-                # التحقق إذا كانت الكلمات المفتاحية متقاربة أو موجودة في اسم الملف
-                if any(word in f_clean for word in keyword_clean.split()[:3]):
-                    available_display_options.append(f)
-                    matched = True
-                    break
-            if not matched:
-                # إذا لم يوجد مطابق حرفي دقيق، نضيف الخيار كاسم افتراضي لضمان ظهوره دائماً
-                available_display_options.append(f"{opt}.docx")
-
-        # إزالة التكرار مع الحفاظ على الترتيب
-        available_display_options = list(dict.fromkeys(available_display_options))
-
+        # عرض كافة ملفات Word الموجودة في مجلد المستخدم بشكل مباشر لضمان ظهور العدد كاملاً
         selected_template = st.selectbox(
             f"اختر النموذج المطلوب لـ ({risk_category}):", 
-            ["-- Select Template --"] + available_display_options, 
+            ["-- Select Template --"] + template_files, 
             key=f"template_select_{st.session_state['form_reset_key']}"
         )
 
@@ -373,15 +334,7 @@ else:
                     st.error(err)
                 st.warning("⚠️ يرجى تصحيح الأخطاء أعلاه لتجنب رفض المعاملة.")
             else:
-                # محاولة البحث عن الملف المطابق في مجلد المستخدم بدقة مرنة
-                clean_selected = selected_template.replace(".docx", "").strip().lower()
                 template_path = os.path.join(TEMPLATES_DIR, user_folder_name, selected_template)
-                
-                if not os.path.exists(template_path):
-                    for file_in_dir in template_files:
-                        if clean_selected in file_in_dir.lower() or file_in_dir.lower().replace(".docx", "").strip() in clean_selected:
-                            template_path = os.path.join(TEMPLATES_DIR, user_folder_name, file_in_dir)
-                            break
 
                 try:
                     doc = Document(template_path)
@@ -405,7 +358,7 @@ else:
                             st.download_button(
                                 label="📥 تنزيل المستند بصيغة PDF النهائي",
                                 data=pdf_bytes,
-                                file_name=f"{logged_user_key}_{os.path.splitext(os.path.basename(template_path))[0]}.pdf",
+                                file_name=f"{logged_user_key}_{os.path.splitext(selected_template)[0]}.pdf",
                                 mime="application/pdf",
                                 on_click=lambda: (st.session_state.update({"form_reset_key": st.session_state["form_reset_key"] + 1}), st.rerun())
                             )
