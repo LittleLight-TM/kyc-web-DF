@@ -34,7 +34,7 @@ else:
 TEMPLATES_DIR = os.path.join(BASE_DIR, "templates")
 
 # ==========================================
-# 📊 فصل الأنشطة الإنجليزية المدمجة وتنسيق العرض (مع دعم المطابقة غير الحساسة للأحرف)
+# 📊 تحميل وتحديث قاعدة بيانات الأنشطة ورموز الـ MCC من الملف الجديد
 # ==========================================
 @st.cache_data
 def load_mcc_database():
@@ -48,29 +48,36 @@ def load_mcc_database():
             df = pd.read_excel(mcc_file_path, sheet_name="Sheet1")
             valid_df = df.dropna(subset=['MCC'])
             for _, row in valid_df.iterrows():
-                seg_ar = str(row['Segment']).strip()
-                seg_en = str(row['Segment.1']).strip()
+                seg_ar = str(row['Segment']).strip() if pd.notna(row['Segment']) else ""
+                seg_en = str(row['Segment.1']).strip() if pd.notna(row['Segment.1']) else ""
                 mcc_val = str(row['MCC']).strip()
                 if mcc_val.endswith('.0'):
                     mcc_val = mcc_val[:-2]
                 
-                if seg_en and seg_en.lower() != 'nan':
-                    # فصل الأنشطة الإنجليزية عند وجود علامة الزائد أو الفاصلة أو المائلة
-                    clean_seg_en = seg_en.replace('(', '').replace(')', '').strip()
-                    parts_en = [p.strip() for p in clean_seg_en.replace('+', ',').replace('/', ',').split(',')]
+                # استخدام النشاط الإنجليزي أو العربي كمعرّف أساسي
+                primary_text = seg_en if seg_en and seg_en.lower() != 'nan' else seg_ar
+                
+                if primary_text and primary_text.lower() != 'nan':
+                    # فصل الأنشطة المتعددة عند وجود علامات فاصلة أو زائد أو مائلة
+                    clean_text = primary_text.replace('(', '').replace(')', '').strip()
+                    parts = [p.strip() for p in clean_text.replace('+', ',').replace('/', ',').split(',')]
                     
-                    clean_seg_ar = seg_ar.replace('(', '').replace(')', '').strip() if seg_ar and seg_ar.lower() != 'nan' else ""
+                    clean_ar = seg_ar.replace('(', '').replace(')', '').strip() if seg_ar and seg_ar.lower() != 'nan' else ""
+                    clean_en = seg_en.replace('(', '').replace(')', '').strip() if seg_en and seg_en.lower() != 'nan' else ""
                     
-                    for part_en in parts_en:
-                        if part_en:
-                            # تخزين القيم بصيغ متعددة لتجنب مشاكل تطابق الحروف الكبيرة والصغيرة
-                            mcc_dict[part_en] = mcc_val
-                            mcc_dict[part_en.upper()] = mcc_val
-                            mcc_dict[part_en.lower()] = mcc_val
+                    for part in parts:
+                        if part:
+                            mcc_dict[part] = mcc_val
+                            mcc_dict[part.upper()] = mcc_val
+                            mcc_dict[part.lower()] = mcc_val
                             
-                            # تنسيق العرض: الإنجليزي بأحرف كبيره واضح وبجانبه العربي الكامل
-                            label = f"{part_en.upper()} — ({clean_seg_ar})"
-                            display_map[label] = part_en
+                            # تنسيق العرض في القائمة المنسدلة
+                            if clean_ar and clean_en and clean_en.lower() != 'nan':
+                                label = f"{clean_en.upper()} — ({clean_ar})"
+                            else:
+                                label = f"{part.upper()}"
+                                
+                            display_map[label] = part
                             dropdown_labels.add(label)
         except Exception as e:
             st.error(f"خطأ في قراءة ملف الـ MCC: {e}")
@@ -165,7 +172,6 @@ else:
         merchant_id_val = st.number_input("Merchant_ID", min_value=0, step=1, value=None, placeholder="أرقام فقط")
         merchant_id = str(merchant_id_val) if merchant_id_val is not None else ""
 
-        # قائمة الأنشطة المفصولة إنجليزياً ومعروضة مع العربي الكامل
         segment_options = AVAILABLE_SEGMENTS + ["Other"]
         selected_dropdown_label = st.selectbox("Select Business Activity (Segment):", segment_options)
 
@@ -174,11 +180,9 @@ else:
             mcc_val_input = st.text_input("Enter MCC Code (أدخل رمز MCC المكون من 4 أرقام):", value="")
             mcc = mcc_val_input
         else:
-            # استخراج النص الإنجليزي النقي والمفرد للملف النهائي مع مطابقة مرنة
             raw_activity = DISPLAY_MAP.get(selected_dropdown_label, selected_dropdown_label)
             nature_of_activity = raw_activity
             
-            # بحث مرن عن رمز MCC بغض النظر عن حالة الأحرف
             auto_mcc = MCC_MAPPING.get(nature_of_activity, MCC_MAPPING.get(nature_of_activity.upper(), MCC_MAPPING.get(nature_of_activity.lower(), "")))
             
             mcc_val_input = st.text_input("MCC (Auto-fetched for Selected Activity)", value=auto_mcc)
