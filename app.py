@@ -25,6 +25,27 @@ USER_CREDENTIALS = {
     }
 }
 
+# قائمة تصنيفات المخاطر والنماذج التابعة لكل منها
+RISK_OPTIONS_MAP = {
+    "cash in": [
+        "cash in HIGH +Client risk صيرفات والذهب",
+        "cash in HIGH+Client risk صيرفات الذهب للمحافضات الساخنه"
+    ],
+    "cash out": [
+        "CashOut-form High +Client risk صيرفات والذهب",
+        "CashOut-form High+Client risk صيرفات الذهب للمحافضات الساخنه"
+    ],
+    "pos": [
+        "KYC low+ Client risk LOW",
+        "KYC high + Client risk جنسيات اخرى",
+        "KYC high +Client risk صيرفات والذهب",
+        "KYC high+Client risk جنسيات اخرى للمحافضات",
+        "KYC high+Client risk صيرفات الذهب للمحافضات الساخنه",
+        "KYC high+Client risk صيرفات وذهب للجنسيات",
+        "KYC high+Client risk محافضات ساخنه"
+    ]
+}
+
 # تحديد مسار المجلد الأساسي
 if hasattr(sys, '_MEIPASS'):
     BASE_DIR = sys._MEIPASS
@@ -34,7 +55,7 @@ else:
 TEMPLATES_DIR = os.path.join(BASE_DIR, "templates")
 
 # ==========================================
-# 📊 فصل الأنشطة الإنجليزية المدمجة وتنسيق العرض (مع فصل الكلمات المفصولة بعلامات الزائد والفواصل)
+# 📊 فصل الأنشطة الإنجليزية المدمجة وتنسيق العرض
 # ==========================================
 @st.cache_data
 def load_mcc_database():
@@ -58,17 +79,14 @@ def load_mcc_database():
                 
                 if seg_en and seg_en.lower() != 'nan':
                     clean_seg_en = seg_en.replace('(', '').replace(')', '').strip()
-                    # فصل الأنشطة الإنجليزية عند وجود علامة الزائد أو الفاصلة أو المائلة لتكون كل كلمة خياراً منفصلاً
                     parts_en = [p.strip() for p in clean_seg_en.replace('+', ',').replace('/', ',').split(',')]
                     
                     for part_en in parts_en:
                         if part_en:
-                            # تخزين القيم بصيغ متعددة لتجنب مشاكل تطابق الحروف الكبيرة والصغيرة
                             mcc_dict[part_en] = mcc_val
                             mcc_dict[part_en.upper()] = mcc_val
                             mcc_dict[part_en.lower()] = mcc_val
                             
-                            # تنسيق العرض: النشاط المنفصل بأحرف كبيرة وبجانبه العربي الكامل
                             if clean_seg_ar:
                                 label = f"{part_en.upper()} — ({clean_seg_ar})"
                             else:
@@ -77,7 +95,6 @@ def load_mcc_database():
                             display_map[label] = part_en
                             dropdown_labels.add(label)
                 elif clean_seg_ar:
-                    # في حال عدم وجود عمود إنجليزي ولكن يوجد عربي
                     mcc_dict[clean_seg_ar] = mcc_val
                     label = f"{clean_seg_ar}"
                     display_map[label] = clean_seg_ar
@@ -139,7 +156,7 @@ else:
             st.rerun()
 
     st.title("نظام معالجة وتحديث نماذج KYC الذكي")
-    st.write("قم بتحديد النموذج المطلوب وإدخال بيانات المحافظة والنشاط التجاري بكل دقة.")
+    st.write("قم بتحديد درجة المخاطرة والنموذج المطلوب، ثم أدخل بيانات المحافظة والنشاط التجاري بدقة.")
 
     def get_user_templates(folder_name):
         user_path = os.path.join(TEMPLATES_DIR, folder_name)
@@ -152,16 +169,39 @@ else:
     if not template_files:
         st.warning(f"لا توجد ملفات Word متوفرة في مجلد المستخدم ({user_folder_name}).")
     else:
-        template_options = ["-- Select Template --"] + template_files
+        # ==========================================
+        # 🎯 خيار Risk Select وتصفية النماذج
+        # ==========================================
+        risk_category = st.selectbox(
+            "اختر نوع المخاطرة (Risk Select):",
+            ["-- Select Risk Category --"] + list(RISK_OPTIONS_MAP.keys()),
+            key=f"risk_select_{st.session_state['form_reset_key']}"
+        )
+
+        if risk_category == "-- Select Risk Category --":
+            st.info("👆 يرجى اختيار نوع المخاطرة (Risk Select) لبدء التصفية واختيار النموذج.")
+            st.stop()
+
+        # تصفية النماذج بناءً على خيار الـ Risk المحدد
+        allowed_templates_keywords = RISK_OPTIONS_MAP.get(risk_category, [])
         
+        # مطابقة ملفات المستخدم المتاحة في المجلد مع الخيارات التابعة لتصنيف المخاطرة
+        filtered_templates = [
+            f for f in template_files 
+            if any(kw.strip().lower() in os.path.splitext(f)[0].strip().lower() for kw in allowed_templates_keywords)
+        ]
+
+        # في حال عدم وجود مطابقة اسمية دقيقة للملفات، يتم عرض القائمة المعرفة بالتصنيف لتجنب فارق الأسماء
+        template_display_list = filtered_templates if filtered_templates else allowed_templates_keywords
+
         selected_template = st.selectbox(
-            "اختر النموذج المطلوب معالجته:", 
-            template_options, 
+            f"اختر النموذج المطلوب لـ ({risk_category}):", 
+            ["-- Select Template --"] + template_display_list, 
             key=f"template_select_{st.session_state['form_reset_key']}"
         )
 
         if selected_template == "-- Select Template --":
-            st.info("👆 يرجى اختيار النموذج من القائمة أعلاه لبدء إدخال البيانات.")
+            st.info("👆 يرجى اختيار النموذج المحدد لبدء إدخال البيانات.")
             st.stop()
 
         st.markdown("---")
@@ -323,7 +363,17 @@ else:
                     st.error(err)
                 st.warning("⚠️ يرجى تصحيح الأخطاء أعلاه لتجنب رفض المعاملة.")
             else:
-                template_path = os.path.join(TEMPLATES_DIR, user_folder_name, selected_template)
+                # تحديد اسم ملف الـ Word المطلوب بدقة
+                actual_template_filename = selected_template if selected_template.endswith(".docx") else f"{selected_template}.docx"
+                template_path = os.path.join(TEMPLATES_DIR, user_folder_name, actual_template_filename)
+                
+                # البحث عن أقرب ملف متطابق في المجلد إما بوجود الامتداد أو بدونه
+                if not os.path.exists(template_path):
+                    for file_in_dir in template_files:
+                        if os.path.splitext(file_in_dir)[0].strip().lower() == os.path.splitext(actual_template_filename)[0].strip().lower():
+                            template_path = os.path.join(TEMPLATES_DIR, user_folder_name, file_in_dir)
+                            break
+
                 try:
                     doc = Document(template_path)
                     replace_placeholders(doc, data)
@@ -346,7 +396,7 @@ else:
                             st.download_button(
                                 label="📥 تنزيل المستند بصيغة PDF النهائي",
                                 data=pdf_bytes,
-                                file_name=f"{logged_user_key}_{os.path.splitext(selected_template)[0]}.pdf",
+                                file_name=f"{logged_user_key}_{os.path.splitext(os.path.basename(template_path))[0]}.pdf",
                                 mime="application/pdf",
                                 on_click=lambda: (st.session_state.update({"form_reset_key": st.session_state["form_reset_key"] + 1}), st.rerun())
                             )
