@@ -169,4 +169,218 @@ else:
         for f in template_files:
             f_lower = f.lower()
             if risk_category == "cash in":
-                if "cash in"
+                if "cash in" in f_lower or "cashin" in f_lower:
+                    filtered_templates.append(f)
+            elif risk_category == "cash out":
+                if "cashout" in f_lower or "cash out" in f_lower:
+                    filtered_templates.append(f)
+            elif risk_category == "pos":
+                if ("kyc" in f_lower or "pos" in f_lower) and "cash in" not in f_lower and "cashin" not in f_lower and "cashout" not in f_lower and "cash out" not in f_lower:
+                    filtered_templates.append(f)
+
+        if not filtered_templates:
+            st.warning("معدل المخاطرة المحدد لا يحتوي على ملفات مطابقة في مجلدك.")
+            st.stop()
+
+        selected_template = st.selectbox(
+            f"اختر النموذج المطلوب لـ ({risk_category}):", 
+            ["-- Select Template --"] + filtered_templates, 
+            key=f"template_select_{st.session_state['form_reset_key']}"
+        )
+
+        if selected_template == "-- Select Template --":
+            st.info("👆 يرجى اختيار النموذج المحدد لبدء إدخال البيانات.")
+            st.stop()
+
+        st.markdown("---")
+        st.subheader("إدخال البيانات المتغيرة والنشاط التجاري")
+
+        kyc_status = st.text_input("KYC STATUS (مثال: Approved / Pending)")
+        region = st.text_input("Region (أدخل اسم المحافظة يدوياً)")
+
+        office_name_en = st.text_input("Office Name EN")
+        office_name_ar = st.text_input("Office Name Ar")
+        
+        merchant_id_val = st.number_input("Merchant_ID", min_value=0, step=1, value=None, placeholder="أرقام فقط")
+        merchant_id = str(merchant_id_val) if merchant_id_val is not None else ""
+
+        segment_options = AVAILABLE_SEGMENTS + ["Other"]
+        selected_dropdown_label = st.selectbox("Select Business Activity (Segment):", segment_options)
+
+        if selected_dropdown_label == "Other":
+            nature_of_activity = st.text_input("Enter Custom Activity (أدخل النشاط يدوياً):")
+            mcc_val_input = st.text_input("Enter MCC Code (أدخل رمز MCC المكون من 4 أرقام):", value="")
+            mcc = mcc_val_input
+        else:
+            raw_activity = DISPLAY_MAP.get(selected_dropdown_label, selected_dropdown_label)
+            nature_of_activity = raw_activity
+            
+            auto_mcc = MCC_MAPPING.get(nature_of_activity, MCC_MAPPING.get(nature_of_activity.upper(), MCC_MAPPING.get(nature_of_activity.lower(), "")))
+            
+            mcc_val_input = st.text_input("MCC (Auto-fetched for Selected Activity)", value=auto_mcc)
+            mcc = mcc_val_input
+
+        def validate_inputs(status, region_val, name_en, name_ar, m_id, mcc_code):
+            errors = []
+            if not status.strip():
+                errors.append("حقل KYC STATUS إلزامي.")
+            if not region_val.strip():
+                errors.append("حقل Region (المحافظة) إلزامي.")
+            if not name_en.strip() or not name_ar.strip():
+                errors.append("يجب إدخال اسم المكتب باللغتين العربية والإنجليزية بدقة.")
+            if not m_id.strip() or len(m_id) < 5:
+                errors.append("رقم الـ Merchant ID غير صحيح أو ناقص.")
+            if not mcc_code.strip() or len(mcc_code) != 4:
+                errors.append("رمز الـ MCC يجب أن يتكون من 4 أرقام صحيحة.")
+            return errors
+
+        data = {
+            "KYC_STATUS": kyc_status,
+            "KYC_SUBJECT": kyc_status,
+            "REGION": region,
+            "OFFICE_NAME_EN": office_name_en,
+            "CLIENT_NAME_HEADER": office_name_en,
+            "OFFICE_NAME_AR": office_name_ar,
+            "CLIENT_NAME_CELL": office_name_ar,
+            "MERCHANT_ID": merchant_id,
+            "CLIENT_ID": merchant_id,
+            "NATURE_OF_ACTIVITY": nature_of_activity,
+            "MCC": mcc
+        }
+
+        st.markdown("---")
+
+        def strip_form_fields(doc):
+            body = doc.element.body
+            for target_tag in ['fldSimple', 'ffData', 'checkBox']:
+                for elem in body.xpath(f'//w:{target_tag}'):
+                    parent = elem.getparent()
+                    if parent is not None:
+                        parent.remove(elem)
+            
+            for table in doc.tables:
+                for row in table.rows:
+                    for cell in row.cells:
+                        xml_str = cell._element.xml.lower()
+                        is_yellow = any(col in xml_str for col in ['yellow', 'ffff00', 'ffff99', 'fff2cc'])
+                        if cell.text.strip() in ['1', '0']:
+                            if not is_yellow:
+                                cell.text = ""
+
+        def replace_in_paragraph(paragraph, replacements):
+            full_text = paragraph.text
+            has_match = False
+            for placeholder, value in replacements.items():
+                if placeholder in full_text:
+                    full_text = full_text.replace(placeholder, value)
+                    has_match = True
+
+            if has_match:
+                if paragraph.runs:
+                    paragraph.runs[0].text = full_text
+                    for r in paragraph.runs[1:]:
+                        r.text = ""
+                else:
+                    paragraph.text = full_text
+
+        def replace_placeholders(doc, data):
+            strip_form_fields(doc)
+            replacements = {f"{{{{{key}}}}}" : val for key, val in data.items() if val}
+            if not replacements:
+                return
+                
+            for p in doc.paragraphs:
+                replace_in_paragraph(p, replacements)
+
+            for table in doc.tables:
+                for row in table.rows:
+                    for cell in row.cells:
+                        for p in cell.paragraphs:
+                            replace_in_paragraph(p, replacements)
+
+            for section in doc.sections:
+                for p in section.header.paragraphs:
+                    replace_in_paragraph(p, replacements)
+                for p in section.footer.paragraphs:
+                    replace_in_paragraph(p, replacements)
+
+        def convert_to_pdf(docx_path, output_pdf_path):
+            abs_docx = os.path.abspath(docx_path)
+            abs_pdf = os.path.abspath(output_pdf_path)
+
+            try:
+                from docx2pdf import convert
+                convert(abs_docx, abs_pdf)
+                if os.path.exists(abs_pdf):
+                    return True
+            except Exception:
+                pass
+
+            if sys.platform == "win32":
+                try:
+                    import pythoncom
+                    import win32com.client
+                    pythoncom.CoInitialize()
+                    word = win32com.client.DispatchEx("Word.Application")
+                    word.Visible = False
+                    doc = word.Documents.Open(abs_docx)
+                    doc.Fields.Unlink()
+                    doc.SaveAs(abs_pdf, FileFormat=17)
+                    doc.Close(False)
+                    word.Quit()
+                    if os.path.exists(abs_pdf):
+                        return True
+                except Exception:
+                    pass
+
+            try:
+                cmd = f'libreoffice --headless --convert-to pdf "{abs_docx}" --outdir "{os.path.dirname(abs_pdf)}"'
+                subprocess.run(cmd, shell=True, check=True)
+                if os.path.exists(abs_pdf):
+                    return True
+            except Exception:
+                pass
+
+            return False
+
+        if st.button("معالجة وتجهيز المستند (PDF)", type="primary"):
+            validation_errors = validate_inputs(kyc_status, region, office_name_en, office_name_ar, merchant_id, mcc)
+            
+            if validation_errors:
+                for err in validation_errors:
+                    st.error(err)
+                st.warning("⚠️ يرجى تصحيح الأخطاء أعلاه لتجنب رفض المعاملة.")
+            else:
+                template_path = os.path.join(TEMPLATES_DIR, user_folder_name, selected_template)
+
+                try:
+                    doc = Document(template_path)
+                    replace_placeholders(doc, data)
+
+                    with tempfile.TemporaryDirectory() as temp_dir:
+                        temp_docx = os.path.join(temp_dir, "temp_processed.docx")
+                        temp_pdf = os.path.join(temp_dir, "temp_processed.pdf")
+
+                        doc.save(temp_docx)
+
+                        with st.spinner("جاري معالجة المستند وتحويله إلى PDF بدقة عالية... يرجى الانتظار"):
+                            success = convert_to_pdf(temp_docx, temp_pdf)
+
+                        if success and os.path.exists(temp_pdf):
+                            with open(temp_pdf, "rb") as f:
+                                pdf_bytes = f.read()
+
+                            st.success("🎉 تم تحديث المستند وتحويله بصيغة PDF بنجاح تام!")
+                            
+                            st.download_button(
+                                label="📥 تنزيل المستند بصيغة PDF النهائي",
+                                data=pdf_bytes,
+                                file_name=f"{logged_user_key}_{os.path.splitext(selected_template)[0]}.pdf",
+                                mime="application/pdf",
+                                on_click=lambda: (st.session_state.update({"form_reset_key": st.session_state["form_reset_key"] + 1}), st.rerun())
+                            )
+                        else:
+                            st.error("❌ تعذر تحويل الملف إلى PDF لعدم توفر محرك تحويل على البيئة الحالية.")
+
+                except Exception as e:
+                    st.error(f"حدث خطأ أثناء معالجة المستند: {e}")
