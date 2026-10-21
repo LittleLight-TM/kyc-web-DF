@@ -152,7 +152,7 @@ else:
         st.warning(f"لا توجد ملفات Word متوفرة في مجلد المستخدم ({user_folder_name}).")
     else:
         # ==========================================
-        # 🎯 خيار Risk Select وعرض جميع النماذج بلا استثناء
+        # 🎯 خيار Risk Select وتصفية النماذج بدقة
         # ==========================================
         risk_category = st.selectbox(
             "اختر نوع المخاطرة (Risk Select):",
@@ -161,13 +161,30 @@ else:
         )
 
         if risk_category == "-- Select Risk Category --":
-            st.info("👆 يرجى اختيار نوع المخاطرة (Risk Select) لبدء اختيار النموذج.")
+            st.info("👆 يرجى اختيار نوع المخاطرة (Risk Select) لعرض النماذج الخاصة بها.")
             st.stop()
 
-        # عرض كافة ملفات Word الموجودة في مجلد المستخدم بشكل مباشر لضمان ظهور العدد كاملاً
+        # تصفية النماذج بناءً على الكلمات المفتاحية لكل تصنيف مخاطر
+        filtered_templates = []
+        for f in template_files:
+            f_lower = f.lower()
+            if risk_category == "cash in":
+                if "cash in" in f_lower:
+                    filtered_templates.append(f)
+            elif risk_category == "cash out":
+                if "cashout" in f_lower or "cash out" in f_lower:
+                    filtered_templates.append(f)
+            elif risk_category == "pos":
+                if ("kyc" in f_lower or "pos" in f_lower) and "cash in" not in f_lower and "cashout" not in f_lower and "cash out" not in f_lower:
+                    filtered_templates.append(f)
+
+        if not filtered_templates:
+            st.warning(معدل المخاطرة المحدد لا يحتوي على ملفات مطابقة في مجلدك.)
+            st.stop()
+
         selected_template = st.selectbox(
             f"اختر النموذج المطلوب لـ ({risk_category}):", 
-            ["-- Select Template --"] + template_files, 
+            ["-- Select Template --"] + filtered_templates, 
             key=f"template_select_{st.session_state['form_reset_key']}"
         )
 
