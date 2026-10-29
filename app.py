@@ -22,6 +22,10 @@ USER_CREDENTIALS = {
     "saif": {
         "password": "saif",        # كلمة المرور لسيف
         "folder": "سيف"            # اسم المجلد الخاص به
+    },
+    "ali": {
+        "password": "12345",       # كلمة المرور لعلي هادي
+        "folder": "علي هادي"       # اسم المجلد الخاص به
     }
 }
 
@@ -108,7 +112,7 @@ if not st.session_state["authenticated"]:
     st.write("يرجى إدخال اسم المستخدم ورمز الدخول للوصول إلى النماذج الخاصّة بك.")
 
     with st.form("login_form"):
-        username_input = st.text_input("اسم المستخدم (yousif / saif)").strip().lower()
+        username_input = st.text_input("اسم المستخدم (yousif / saif / ali)").strip().lower()
         password_input = st.text_input("رمز الدخول (كلمة المرور)", type="password").strip()
         submit_button = st.form_submit_button("تسجيل الدخول", type="primary")
 
