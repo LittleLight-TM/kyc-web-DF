@@ -26,6 +26,10 @@ USER_CREDENTIALS = {
     "ali": {
         "password": "12345",       # كلمة المرور لعلي هادي
         "folder": "علي هادي"       # اسم المجلد الخاص به
+    },
+    "saif_ali": {
+        "password": "123",         # كلمة المرور لسيف علي
+        "folder": "سيف علي"       # اسم المجلد الخاص به
     }
 }
 
@@ -112,7 +116,7 @@ if not st.session_state["authenticated"]:
     st.write("يرجى إدخال اسم المستخدم ورمز الدخول للوصول إلى النماذج الخاصّة بك.")
 
     with st.form("login_form"):
-        username_input = st.text_input("اسم المستخدم (yousif / saif / ali)").strip().lower()
+        username_input = st.text_input("اسم المستخدم (yousif / saif / ali / saif_ali)").strip().lower()
         password_input = st.text_input("رمز الدخول (كلمة المرور)", type="password").strip()
         submit_button = st.form_submit_button("تسجيل الدخول", type="primary")
 
@@ -183,8 +187,7 @@ else:
                     filtered_templates.append(f)
 
         if not filtered_templates:
-            st.warning("معدل المخاطرة المحدد لا يحتوي على ملفات مطابقة في مجلدك.")
-            st.stop()
+            filtered_templates = template_files
 
         selected_template = st.selectbox(
             f"اختر النموذج المطلوب لـ ({risk_category}):", 
