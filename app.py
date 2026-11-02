@@ -45,10 +45,11 @@ else:
 TEMPLATES_DIR = os.path.join(BASE_DIR, "templates")
 
 # ==========================================
-# 📊 قراءة ودمج قاعدة بيانات الـ MCC من الملف الجديد (Sheet2)
+# 📊 قراءة ودمج قاعدة بيانات الـ MCC من الملف الجديد (MCC NEW.xlsx.xlsx)
 # ==========================================
 @st.cache_data
 def load_mcc_database():
+    # استخدام الاسم الفعلي الموجود في المستودع حسب الصورة المرفقة
     mcc_file_path = os.path.join(BASE_DIR, "MCC NEW.xlsx.xlsx")
     mcc_dict = {}
     display_map = {} 
@@ -56,7 +57,6 @@ def load_mcc_database():
     
     if os.path.exists(mcc_file_path):
         try:
-            # قراءة Sheet2 التي تحتوي على التفاصيل والأكواد والوصف
             df = pd.read_excel(mcc_file_path, sheet_name="Sheet2")
             valid_df = df.dropna(subset=['MCC Code'])
             
@@ -65,7 +65,6 @@ def load_mcc_database():
                 mcc_val_raw = str(row['MCC Code']).strip()
                 desc_en = str(row['MCC Description (English)']).strip() if pd.notna(row['MCC Description (English)']) else ""
                 
-                # استخراج أول رقم MCC صحيح في حال وجود أكثر من كود مفصول بأسطر جديدة
                 mcc_val = mcc_val_raw.split('\n')[0].strip()
                 if mcc_val.endswith('.0'):
                     mcc_val = mcc_val[:-2]
@@ -80,7 +79,6 @@ def load_mcc_database():
                             mcc_dict[part.upper()] = mcc_val
                             mcc_dict[part.lower()] = mcc_val
                             
-                            # تنسيق العرض في القائمة المنسدلة (العربي + الإنجليزي الوصفي إن توفر)
                             if desc_en and desc_en.lower() != 'nan':
                                 primary_en = desc_en.split('\n')[0].strip()
                                 label = f"{part} — ({primary_en.upper()})"
