@@ -45,35 +45,27 @@ else:
 TEMPLATES_DIR = os.path.join(BASE_DIR, "templates")
 
 # ==========================================
-# 📊 قراءة ودمج قاعدة بيانات الـ MCC من الملف الجديد (new mcc.xlsx)
+# 📊 قراءة ودمج قاعدة بيانات الـ MCC من الملف الجديد (Sheet2)
 # ==========================================
 @st.cache_data
 def load_mcc_database():
-    # تم تغيير اسم الملف هنا إلى new mcc.xlsx
-    mcc_file_path = os.path.join(BASE_DIR, "new mcc.xlsx")
+    mcc_file_path = os.path.join(BASE_DIR, "MCC NEW.xlsx.xlsx")
     mcc_dict = {}
     display_map = {} 
     dropdown_labels = set()
     
     if os.path.exists(mcc_file_path):
         try:
-            xls = pd.ExcelFile(mcc_file_path)
-            # اختيار الشيت الثاني الذي يحتوي على التفاصيل والأكواد والوصف
-            sheet_to_use = "Sheet2" if "Sheet2" in xls.sheet_names else xls.sheet_names[0]
-            df = pd.read_excel(mcc_file_path, sheet_name=sheet_to_use)
-            
-            # تحديد اسم الأعمدة بناءً على هيكل الملف الجديد
-            col_ar = 'النشاط التجاري بالعربي' if 'النشاط التجاري بالعربي' in df.columns else df.columns[0]
-            col_code = 'MCC Code' if 'MCC Code' in df.columns else df.columns[1]
-            col_desc_en = 'MCC Description (English)' if 'MCC Description (English)' in df.columns else None
-            
-            valid_df = df.dropna(subset=[col_code])
+            # قراءة Sheet2 التي تحتوي على التفاصيل والأكواد والوصف
+            df = pd.read_excel(mcc_file_path, sheet_name="Sheet2")
+            valid_df = df.dropna(subset=['MCC Code'])
             
             for _, row in valid_df.iterrows():
-                seg_ar = str(row[col_ar]).strip() if pd.notna(row[col_ar]) else ""
-                mcc_val_raw = str(row[col_code]).strip()
-                desc_en = str(row[col_desc_en]).strip() if col_desc_en and pd.notna(row[col_desc_en]) else ""
+                seg_ar = str(row['النشاط التجاري بالعربي']).strip() if pd.notna(row['النشاط التجاري بالعربي']) else ""
+                mcc_val_raw = str(row['MCC Code']).strip()
+                desc_en = str(row['MCC Description (English)']).strip() if pd.notna(row['MCC Description (English)']) else ""
                 
+                # استخراج أول رقم MCC صحيح في حال وجود أكثر من كود مفصول بأسطر جديدة
                 mcc_val = mcc_val_raw.split('\n')[0].strip()
                 if mcc_val.endswith('.0'):
                     mcc_val = mcc_val[:-2]
@@ -88,6 +80,7 @@ def load_mcc_database():
                             mcc_dict[part.upper()] = mcc_val
                             mcc_dict[part.lower()] = mcc_val
                             
+                            # تنسيق العرض في القائمة المنسدلة (العربي + الإنجليزي الوصفي إن توفر)
                             if desc_en and desc_en.lower() != 'nan':
                                 primary_en = desc_en.split('\n')[0].strip()
                                 label = f"{part} — ({primary_en.upper()})"
@@ -98,7 +91,7 @@ def load_mcc_database():
                             dropdown_labels.add(label)
                             
         except Exception as e:
-            st.error(f"خطأ في قراءة ملف الـ MCC (new mcc.xlsx): {e}")
+            st.error(f"خطأ في قراءة ملف الـ MCC الجديد: {e}")
             
     return mcc_dict, display_map, sorted(list(dropdown_labels))
 
