@@ -44,78 +44,6 @@ else:
 
 TEMPLATES_DIR = os.path.join(BASE_DIR, "templates")
 
-# ==========================================
-# 📊 الدمج الذكي بين الملف القديم والجديد (تنسيق العرض القديم + الأكواد والتوصيفات الجديدة)
-# ==========================================
-@st.cache_data
-def load_mcc_database():
-    new_file_path = os.path.join(BASE_DIR, "MCC NEW.xlsx.xlsx")
-    old_file_path = os.path.join(BASE_DIR, "MCC NEW.xlsx")
-    
-    mcc_dict = {}
-    display_map = {} 
-    dropdown_labels = set()
-    
-    # محاولة قراءة الأسماء الإنجليزية من الملف القديم لمطابقتها مع الأكواد الجديدة
-    old_en_mapping = {}
-    if os.path.exists(old_file_path):
-        try:
-            df_old = pd.read_excel(old_file_path, sheet_name="Sheet1")
-            for _, row in df_old.iterrows():
-                seg_ar = str(row['Segment']).strip() if pd.notna(row['Segment']) else ""
-                seg_en = str(row['Segment.1']).strip() if pd.notna(row['Segment.1']) else ""
-                if seg_ar and seg_en and seg_en.lower() != 'nan':
-                    old_en_mapping[seg_ar] = seg_en
-        except Exception:
-            pass
-
-    # قراءة الملف الجديد (Sheet2) لأخذ الأكواد والوصف المحدث
-    if os.path.exists(new_file_path):
-        try:
-            df_new = pd.read_excel(new_file_path, sheet_name="Sheet2")
-            valid_df = df_new.dropna(subset=['MCC Code'])
-            
-            for _, row in valid_df.iterrows():
-                seg_ar = str(row['النشاط التجاري بالعربي']).strip() if pd.notna(row['النشاط التجاري بالعربي']) else ""
-                mcc_val_raw = str(row['MCC Code']).strip()
-                desc_en = str(row['MCC Description (English)']).strip() if pd.notna(row['MCC Description (English)']) else ""
-                
-                mcc_val = mcc_val_raw.split('\n')[0].strip()
-                if mcc_val.endswith('.0'):
-                    mcc_val = mcc_val[:-2]
-                
-                clean_seg_ar = seg_ar.replace('(', '').replace(')', '').strip()
-                
-                if clean_seg_ar and clean_seg_ar.lower() != 'nan':
-                    # البحث عن المقابل الإنجليزي (إما من الملف القديم أو من الوصف الإنجليزي الجديد)
-                    english_counterpart = old_en_mapping.get(clean_seg_ar, "")
-                    if not english_counterpart and desc_en and desc_en.lower() != 'nan':
-                        english_counterpart = desc_en.split('\n')[0].strip()
-                    
-                    # فصل الأنشطة المتعددة
-                    parts = [p.strip() for p in clean_seg_ar.replace('+', ',').replace('/', ',').split(',')]
-                    for part in parts:
-                        if part:
-                            mcc_dict[part] = mcc_val
-                            mcc_dict[part.upper()] = mcc_val
-                            mcc_dict[part.lower()] = mcc_val
-                            
-                            if english_counterpart:
-                                # دمج التنسيق القديم: الإنجليزي بجانب العربي
-                                label = f"{english_counterpart.upper()} — ({clean_seg_ar})"
-                            else:
-                                label = f"{clean_seg_ar}"
-                                
-                            display_map[label] = part
-                            dropdown_labels.add(label)
-                            
-        except Exception as e:
-            st.error(f"خطأ في قراءة قواعد بيانات MCC: {e}")
-            
-    return mcc_dict, display_map, sorted(list(dropdown_labels))
-
-MCC_MAPPING, DISPLAY_MAP, AVAILABLE_SEGMENTS = load_mcc_database()
-
 # إدارة حالة تسجيل الدخول عبر Session State
 if "authenticated" not in st.session_state:
     st.session_state["authenticated"] = False
@@ -165,7 +93,7 @@ else:
             st.rerun()
 
     st.title("نظام معالجة وتحديث نماذج KYC الذكي")
-    st.write("قم بتحديد درجة المخاطرة والنموذج المطلوب، ثم أدخل بيانات المحافظة والنشاط التجاري بدقة.")
+    st.write("قم بتحديد درجة المخاطرة والنموذج المطلوب، ثم أدخل بيانات المحافظة والنشاط التجاري يدوياً.")
 
     def get_user_templates(folder_name):
         user_path = os.path.join(TEMPLATES_DIR, folder_name)
@@ -230,21 +158,17 @@ else:
         merchant_id_val = st.number_input("Merchant_ID", min_value=0, step=1, value=None, placeholder="أرقام فقط")
         merchant_id = str(merchant_id_val) if merchant_id_val is not None else ""
 
-        segment_options = AVAILABLE_SEGMENTS + ["Other"]
-        selected_dropdown_label = st.selectbox("Select Business Activity (Segment):", segment_options)
+        # إدخال النشاط التجاري يدوياً بالكامل
+        nature_of_activity = st.text_input("Enter Custom Activity (أدخل النشاط التجاري يدوياً):")
 
-        if selected_dropdown_label == "Other":
-            nature_of_activity = st.text_input("Enter Custom Activity (أدخل النشاط يدوياً):")
-            mcc_val_input = st.text_input("Enter MCC Code (أدخل رمز MCC المكون من 4 أرقام):", value="")
-            mcc = mcc_val_input
+        # تعيين MCC تلقائياً لـ cash out ليصبح 6010
+        if risk_category == "cash out":
+            default_mcc = "6010"
         else:
-            raw_activity = DISPLAY_MAP.get(selected_dropdown_label, selected_dropdown_label)
-            nature_of_activity = raw_activity
-            
-            auto_mcc = MCC_MAPPING.get(nature_of_activity, MCC_MAPPING.get(nature_of_activity.upper(), MCC_MAPPING.get(nature_of_activity.lower(), "")))
-            
-            mcc_val_input = st.text_input("MCC (Auto-fetched for Selected Activity)", value=auto_mcc)
-            mcc = mcc_val_input
+            default_mcc = ""
+
+        mcc_val_input = st.text_input("MCC (أدخل رمز MCC المكون من 4 أرقام):", value=default_mcc)
+        mcc = mcc_val_input
 
         def validate_inputs(status, region_val, name_en, name_ar, m_id, mcc_code):
             errors = []
