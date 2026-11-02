@@ -45,53 +45,60 @@ else:
 TEMPLATES_DIR = os.path.join(BASE_DIR, "templates")
 
 # ==========================================
-# 📊 فصل الأنشطة الإنجليزية المدمجة وتنسيق العرض
+# 📊 قراءة ودمج قاعدة بيانات الـ MCC من الملف الجديد (new mcc.xlsx)
 # ==========================================
 @st.cache_data
 def load_mcc_database():
-    mcc_file_path = os.path.join(BASE_DIR, "MCC NEW.xlsx")
+    # تم تغيير اسم الملف هنا إلى new mcc.xlsx
+    mcc_file_path = os.path.join(BASE_DIR, "new mcc.xlsx")
     mcc_dict = {}
     display_map = {} 
     dropdown_labels = set()
     
     if os.path.exists(mcc_file_path):
         try:
-            df = pd.read_excel(mcc_file_path, sheet_name="Sheet1")
-            valid_df = df.dropna(subset=['MCC'])
+            xls = pd.ExcelFile(mcc_file_path)
+            # اختيار الشيت الثاني الذي يحتوي على التفاصيل والأكواد والوصف
+            sheet_to_use = "Sheet2" if "Sheet2" in xls.sheet_names else xls.sheet_names[0]
+            df = pd.read_excel(mcc_file_path, sheet_name=sheet_to_use)
+            
+            # تحديد اسم الأعمدة بناءً على هيكل الملف الجديد
+            col_ar = 'النشاط التجاري بالعربي' if 'النشاط التجاري بالعربي' in df.columns else df.columns[0]
+            col_code = 'MCC Code' if 'MCC Code' in df.columns else df.columns[1]
+            col_desc_en = 'MCC Description (English)' if 'MCC Description (English)' in df.columns else None
+            
+            valid_df = df.dropna(subset=[col_code])
+            
             for _, row in valid_df.iterrows():
-                seg_ar = str(row['Segment']).strip() if pd.notna(row['Segment']) else ""
-                seg_en = str(row['Segment.1']).strip() if pd.notna(row['Segment.1']) else ""
-                mcc_val = str(row['MCC']).strip()
+                seg_ar = str(row[col_ar]).strip() if pd.notna(row[col_ar]) else ""
+                mcc_val_raw = str(row[col_code]).strip()
+                desc_en = str(row[col_desc_en]).strip() if col_desc_en and pd.notna(row[col_desc_en]) else ""
+                
+                mcc_val = mcc_val_raw.split('\n')[0].strip()
                 if mcc_val.endswith('.0'):
                     mcc_val = mcc_val[:-2]
                 
-                clean_seg_ar = seg_ar.replace('(', '').replace(')', '').strip() if seg_ar and seg_ar.lower() != 'nan' else ""
+                clean_seg_ar = seg_ar.replace('(', '').replace(')', '').strip()
                 
-                if seg_en and seg_en.lower() != 'nan':
-                    clean_seg_en = seg_en.replace('(', '').replace(')', '').strip()
-                    parts_en = [p.strip() for p in clean_seg_en.replace('+', ',').replace('/', ',').split(',')]
-                    
-                    for part_en in parts_en:
-                        if part_en:
-                            mcc_dict[part_en] = mcc_val
-                            mcc_dict[part_en.upper()] = mcc_val
-                            mcc_dict[part_en.lower()] = mcc_val
+                if clean_seg_ar and clean_seg_ar.lower() != 'nan':
+                    parts = [p.strip() for p in clean_seg_ar.replace('+', ',').replace('/', ',').split(',')]
+                    for part in parts:
+                        if part:
+                            mcc_dict[part] = mcc_val
+                            mcc_dict[part.upper()] = mcc_val
+                            mcc_dict[part.lower()] = mcc_val
                             
-                            if clean_seg_ar:
-                                label = f"{part_en.upper()} — ({clean_seg_ar})"
+                            if desc_en and desc_en.lower() != 'nan':
+                                primary_en = desc_en.split('\n')[0].strip()
+                                label = f"{part} — ({primary_en.upper()})"
                             else:
-                                label = f"{part_en.upper()}"
+                                label = f"{part}"
                                 
-                            display_map[label] = part_en
+                            display_map[label] = part
                             dropdown_labels.add(label)
-                elif clean_seg_ar:
-                    mcc_dict[clean_seg_ar] = mcc_val
-                    label = f"{clean_seg_ar}"
-                    display_map[label] = clean_seg_ar
-                    dropdown_labels.add(label)
-                    
+                            
         except Exception as e:
-            st.error(f"خطأ في قراءة ملف الـ MCC: {e}")
+            st.error(f"خطأ في قراءة ملف الـ MCC (new mcc.xlsx): {e}")
             
     return mcc_dict, display_map, sorted(list(dropdown_labels))
 
@@ -183,7 +190,7 @@ else:
                 if "cashout" in f_lower or "cash out" in f_lower:
                     filtered_templates.append(f)
             elif risk_category == "pos":
-                if ("kyc" in f_lower or "pos" in f_lower) and "cash in" not in f_lower and "cashin" not in f_lower and "cashout" not in f_lower and "cash out" not in f_lower:
+                if "cash in" not in f_lower and "cashin" not in f_lower and "cashout" not in f_lower and "cash out" not in f_lower:
                     filtered_templates.append(f)
 
         if not filtered_templates:
