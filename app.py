@@ -45,20 +45,35 @@ else:
 TEMPLATES_DIR = os.path.join(BASE_DIR, "templates")
 
 # ==========================================
-# 📊 قراءة ودمج قاعدة بيانات الـ MCC من الملف الجديد (MCC NEW.xlsx.xlsx)
+# 📊 الدمج الذكي بين الملف القديم والجديد (تنسيق العرض القديم + الأكواد والتوصيفات الجديدة)
 # ==========================================
 @st.cache_data
 def load_mcc_database():
-    # استخدام الاسم الفعلي الموجود في المستودع حسب الصورة المرفقة
-    mcc_file_path = os.path.join(BASE_DIR, "MCC NEW.xlsx.xlsx")
+    new_file_path = os.path.join(BASE_DIR, "MCC NEW.xlsx.xlsx")
+    old_file_path = os.path.join(BASE_DIR, "MCC NEW.xlsx")
+    
     mcc_dict = {}
     display_map = {} 
     dropdown_labels = set()
     
-    if os.path.exists(mcc_file_path):
+    # محاولة قراءة الأسماء الإنجليزية من الملف القديم لمطابقتها مع الأكواد الجديدة
+    old_en_mapping = {}
+    if os.path.exists(old_file_path):
         try:
-            df = pd.read_excel(mcc_file_path, sheet_name="Sheet2")
-            valid_df = df.dropna(subset=['MCC Code'])
+            df_old = pd.read_excel(old_file_path, sheet_name="Sheet1")
+            for _, row in df_old.iterrows():
+                seg_ar = str(row['Segment']).strip() if pd.notna(row['Segment']) else ""
+                seg_en = str(row['Segment.1']).strip() if pd.notna(row['Segment.1']) else ""
+                if seg_ar and seg_en and seg_en.lower() != 'nan':
+                    old_en_mapping[seg_ar] = seg_en
+        except Exception:
+            pass
+
+    # قراءة الملف الجديد (Sheet2) لأخذ الأكواد والوصف المحدث
+    if os.path.exists(new_file_path):
+        try:
+            df_new = pd.read_excel(new_file_path, sheet_name="Sheet2")
+            valid_df = df_new.dropna(subset=['MCC Code'])
             
             for _, row in valid_df.iterrows():
                 seg_ar = str(row['النشاط التجاري بالعربي']).strip() if pd.notna(row['النشاط التجاري بالعربي']) else ""
@@ -72,6 +87,12 @@ def load_mcc_database():
                 clean_seg_ar = seg_ar.replace('(', '').replace(')', '').strip()
                 
                 if clean_seg_ar and clean_seg_ar.lower() != 'nan':
+                    # البحث عن المقابل الإنجليزي (إما من الملف القديم أو من الوصف الإنجليزي الجديد)
+                    english_counterpart = old_en_mapping.get(clean_seg_ar, "")
+                    if not english_counterpart and desc_en and desc_en.lower() != 'nan':
+                        english_counterpart = desc_en.split('\n')[0].strip()
+                    
+                    # فصل الأنشطة المتعددة
                     parts = [p.strip() for p in clean_seg_ar.replace('+', ',').replace('/', ',').split(',')]
                     for part in parts:
                         if part:
@@ -79,17 +100,17 @@ def load_mcc_database():
                             mcc_dict[part.upper()] = mcc_val
                             mcc_dict[part.lower()] = mcc_val
                             
-                            if desc_en and desc_en.lower() != 'nan':
-                                primary_en = desc_en.split('\n')[0].strip()
-                                label = f"{part} — ({primary_en.upper()})"
+                            if english_counterpart:
+                                # دمج التنسيق القديم: الإنجليزي بجانب العربي
+                                label = f"{english_counterpart.upper()} — ({clean_seg_ar})"
                             else:
-                                label = f"{part}"
+                                label = f"{clean_seg_ar}"
                                 
                             display_map[label] = part
                             dropdown_labels.add(label)
                             
         except Exception as e:
-            st.error(f"خطأ في قراءة ملف الـ MCC الجديد: {e}")
+            st.error(f"خطأ في قراءة قواعد بيانات MCC: {e}")
             
     return mcc_dict, display_map, sorted(list(dropdown_labels))
 
