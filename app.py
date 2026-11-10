@@ -155,56 +155,36 @@ else:
         merchant_id_val = st.number_input("Client ID / Merchant_ID", min_value=0, step=1, value=None, placeholder="أرقام فقط")
         merchant_id = str(merchant_id_val) if merchant_id_val is not None else ""
 
-        # إدخال النشاط التجاري يدوياً بالكامل
+        # إدخال النشاط التجاري يدوياً بالكامل بدون حقل MCC
         nature_of_activity = st.text_input("Nature of the Activity (طبيعة النشاط):")
 
-        # تعيين MCC تلقائياً لـ cash out ليصبح 6010
-        if risk_category == "cash out":
-            default_mcc = "6010"
-        else:
-            default_mcc = ""
-
-        mcc_val_input = st.text_input("MCC (رمز الـ MCC المكون من 4 أرقام):", value=default_mcc)
-        mcc = mcc_val_input
-
-        def validate_inputs(name_en, name_ar, m_id, mcc_code):
+        def validate_inputs(name_en, name_ar, m_id):
             errors = []
             if not name_en.strip() or not name_ar.strip():
                 errors.append("يجب إدخال اسم العميل باللغتين العربية والإنجليزية بدقة.")
             if not m_id.strip() or len(m_id) < 5:
                 errors.append("رقم الـ Client ID / Merchant ID غير صحيح أو ناقص.")
-            if not mcc_code.strip() or len(mcc_code) != 4:
-                errors.append("رمز الـ MCC يجب أن يتكون من 4 أرقام صحيحة.")
             return errors
 
         data = {
             "CLIENT_NAME_HEADER": office_name_en,
             "CLIENT_NAME_CELL": office_name_ar,
             "CLIENT_ID": merchant_id,
-            "NATURE_OF_ACTIVITY": nature_of_activity,
-            "MCC": mcc
+            "NATURE_OF_ACTIVITY": nature_of_activity
         }
 
         st.markdown("---")
 
         def remove_first_page_content(doc):
             """
-            دالة لحذف الصفحة الأولى بالكامل من المستند (الفقرات والجدول الأول المتعلق بتقرير Compliance)
+            دالة لحذف الصفحة الأولى بالكامل من المستند (التقارير العلوية والجداول الخاصة بـ Compliance)
             مع إبقاء الصفحة الثانية (Client risk assessment form) وما بعدها.
             """
-            # حذف الجداول الأولى (إذا كان التقرير العلوي جدولاً)
-            if len(doc.tables) > 1:
-                # نفترض أن الجدول الأول أو أول جدولين يخصان الصفحة الأولى
-                # سنقوم بإزالة العناصر التي تسبق عبارة "Client risk assessment form"
-                pass
-            
-            # طريقة دقيقة وحذف الفقرات والجداول الواقعة قبل عنوان تقييم المخاطر
             body = doc.element.body
             found_second_page = False
             
             elements_to_remove = []
             for child in list(body):
-                # التحقق إذا وصلنا إلى نص عنوان الصفحة الثانية
                 xml_text = ''.join(child.itertext())
                 if "Client risk assessment form" in xml_text or "client name" in xml_text.lower():
                     found_second_page = True
@@ -212,10 +192,8 @@ else:
                 if not found_second_page:
                     elements_to_remove.append(child)
                 else:
-                    # بمجرد الوصول للثانية نتوقف عن الحذف
                     break
             
-            # إزالة عناصر الصفحة الأولى
             for elem in elements_to_remove:
                 body.remove(elem)
 
@@ -253,11 +231,9 @@ else:
                     paragraph.text = full_text
 
         def replace_placeholders(doc, data):
-            # أولاً: حذف الصفحة الأولى بالكامل
             remove_first_page_content(doc)
-            
-            # ثانياً: تنظيف الحقول واستبدال المتغيرات في الصفحة الثانية الباقية
             strip_form_fields(doc)
+            
             replacements = {f"{{{{{key}}}}}" : val for key, val in data.items() if val}
             if not replacements:
                 return
@@ -317,7 +293,7 @@ else:
             return False
 
         if st.button("معالجة وتجهيز المستند (PDF)", type="primary"):
-            validation_errors = validate_inputs(office_name_en, office_name_ar, merchant_id, mcc)
+            validation_errors = validate_inputs(office_name_en, office_name_ar, merchant_id)
             
             if validation_errors:
                 for err in validation_errors:
