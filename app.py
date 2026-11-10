@@ -152,10 +152,7 @@ else:
         office_name_en = st.text_input("Client Name EN (اسم العميل بالإنجليزي)")
         office_name_ar = st.text_input("Client Name Ar (اسم العميل بالعربي)")
         
-        # تم تعديله هنا ليكون حقل نصي يقبل الكتابة الحرة
         merchant_id = st.text_input("Client ID / Merchant_ID", placeholder="أدخل رقم أو نص الـ ID")
-
-        # إدخال النشاط التجاري يدوياً بالكامل
         nature_of_activity = st.text_input("Nature of the Activity (طبيعة النشاط):")
 
         def validate_inputs(name_en, name_ar, m_id):
@@ -176,10 +173,6 @@ else:
         st.markdown("---")
 
         def remove_first_page_content(doc):
-            """
-            دالة لحذف الصفحة الأولى بالكامل من المستند (التقارير العلوية والجداول الخاصة بـ Compliance)
-            مع إبقاء الصفحة الثانية (Client risk assessment form) وما بعدها.
-            """
             body = doc.element.body
             found_second_page = False
             
@@ -293,4 +286,43 @@ else:
             return False
 
         if st.button("معالجة وتجهيز المستند (PDF)", type="primary"):
-            validation_errors = validate_inputs(
+            validation_errors = validate_inputs(office_name_en, office_name_ar, merchant_id)
+            
+            if validation_errors:
+                for err in validation_errors:
+                    st.error(err)
+                st.warning("⚠️ يرجى تصحيح الأخطاء أعلاه لتجنب رفض المعاملة.")
+            else:
+                template_path = os.path.join(TEMPLATES_DIR, user_folder_name, selected_template)
+
+                try:
+                    doc = Document(template_path)
+                    replace_placeholders(doc, data)
+
+                    with tempfile.TemporaryDirectory() as temp_dir:
+                        temp_docx = os.path.join(temp_dir, "temp_processed.docx")
+                        temp_pdf = os.path.join(temp_dir, "temp_processed.pdf")
+
+                        doc.save(temp_docx)
+
+                        with st.spinner("جاري معالجة المستند وحذف الصفحة الأولى وتحويله إلى PDF... يرجى الانتظار"):
+                            success = convert_to_pdf(temp_docx, temp_pdf)
+
+                        if success and os.path.exists(temp_pdf):
+                            with open(temp_pdf, "rb") as f:
+                                pdf_bytes = f.read()
+
+                            st.success("🎉 تم تحديث المستند وحذف الصفحة الأولى وإصدار ملف الـ PDF بنجاح تام!")
+                            
+                            st.download_button(
+                                label="📥 تنزيل المستند بصيغة PDF النهائي",
+                                data=pdf_bytes,
+                                file_name=f"{logged_user_key}_{os.path.splitext(selected_template)[0]}_Page2.pdf",
+                                mime="application/pdf",
+                                on_click=lambda: (st.session_state.update({"form_reset_key": st.session_state["form_reset_key"] + 1}), st.rerun())
+                            )
+                        else:
+                            st.error("❌ تعذر تحويل الملف إلى PDF لعدم توفر محرك تحويل على البيئة الحالية.")
+
+                except Exception as e:
+                    st.error(f"حدث خطأ أثناء معالجة المستند: {e}")
